@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
 import { useData } from '../../contexts/datacontext';
@@ -57,7 +57,7 @@ const AdminDashboard: React.FC = () => {
   const [editingDoctor, setEditingDoctor] = useState<any>(null);
 
   // Find or create hospital for this admin
-  const adminHospital = hospitals.find(h => h.adminId === user?.id);
+  const adminHospital = hospitals.find(h => h.adminId === user?.id || (user?.email && h.email === user?.email));
   const [hospitalData, setHospitalData] = useState(adminHospital || {
     id: '',
     name: '',
@@ -77,6 +77,12 @@ const AdminDashboard: React.FC = () => {
     adminId: user?.id || '',
     registrationDate: new Date().toISOString().split('T')[0]
   });
+
+  useEffect(() => {
+    if (adminHospital) {
+      setHospitalData(adminHospital);
+    }
+  }, [adminHospital]);
 
   const [doctorForm, setDoctorForm] = useState({
     name: '',
@@ -178,19 +184,17 @@ const AdminDashboard: React.FC = () => {
     }
     
     if (adminHospital) {
-      updateHospital(adminHospital.id, hospitalData);
-      setAdminHospital({ ...adminHospital, ...hospitalData });
+      updateHospital(adminHospital.id, { ...hospitalData, adminId: user?.id || '' });
     } else {
-      const hospitalId = addHospital(hospitalData);
-      const newHospital = { ...hospitalData, id: hospitalId, registrationDate: new Date().toISOString().split('T')[0] };
+      const hospitalId = addHospital({ ...hospitalData, adminId: user?.id || '' });
+      const newHospital = { ...hospitalData, id: hospitalId, adminId: user?.id || '', registrationDate: new Date().toISOString().split('T')[0] };
       setHospitalData(newHospital);
-      setAdminHospital(newHospital);
     }
     setEditingHospital(false);
     setShowHospitalForm(false);
     
     // Show success message
-    alert('Hospital information saved successfully!');
+    alert('Hospital information saved successfully in database!');
   };
 
   const handleDeleteAccount = async () => {

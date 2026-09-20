@@ -1,16 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
-import { Heart, ArrowLeft, Mail, Lock, User, Phone, Calendar, Trash2, Shield, KeyRound, Sparkles } from 'lucide-react';
+import { Heart, ArrowLeft, Mail, Lock, User, Phone, Calendar, Trash2, Shield, Sparkles } from 'lucide-react';
 
 const PatientAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { login, loginWithGoogle, loginWithOtp, register } = useAuth();
+  const { login, loginWithGoogle, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
-  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpStep, setOtpStep] = useState<'signup' | 'login' | 'delete'>('signup');
+  const [otpStep, setOtpStep] = useState<'signup' | 'delete'>('signup');
   const [activeOtp, setActiveOtp] = useState('');
   const [otpTarget, setOtpTarget] = useState('');
   const [otpBanner, setOtpBanner] = useState('');
@@ -47,7 +46,7 @@ const PatientAuth: React.FC = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const sendOTP = (target: string, step: 'signup' | 'login' | 'delete') => {
+  const sendOTP = (target: string, step: 'signup' | 'delete') => {
     const generatedOtp = generateOTP();
     console.log(`OTP generated for ${target} (${step}): ${generatedOtp}`);
     setActiveOtp(generatedOtp);
@@ -64,37 +63,11 @@ const PatientAuth: React.FC = () => {
 
     try {
       if (isLogin) {
-        if (loginMethod === 'password') {
-          const result = await login(formData.email, formData.password, 'patient');
-          if (result.success) {
-            navigate('/patient/dashboard');
-          } else {
-            setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
-          }
+        const result = await login(formData.email, formData.password, 'patient');
+        if (result.success) {
+          navigate('/patient/dashboard');
         } else {
-          // Login via OTP
-          if (!formData.email) {
-            setMessage('Please enter your email, phone, or patient ID');
-            setIsLoading(false);
-            return;
-          }
-          const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
-          const user = users.find((u: any) => 
-            (u.email === formData.email || u.phone === formData.email || u.id === formData.email) &&
-            u.role === 'patient'
-          );
-          if (!user) {
-            setMessage('No patient account found with these details. Please register first or check your details.');
-            setIsLoading(false);
-            return;
-          }
-          const target = user.phone || user.email;
-          const generatedOtp = sendOTP(target, 'login');
-          setOtp(generatedOtp);
-          setOtpStep('login');
-          setShowOtpModal(true);
-          setIsLoading(false);
-          return;
+          setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
         }
       } else {
         if (formData.password !== formData.confirmPassword) {
@@ -158,16 +131,6 @@ const PatientAuth: React.FC = () => {
             setMessage(result.message || 'Registration failed');
             return;
           }
-        }
-      } else if (otpStep === 'login') {
-        const result = await loginWithOtp(formData.email, 'patient');
-        if (result.success) {
-          localStorage.removeItem('login_otp');
-          setShowOtpModal(false);
-          navigate('/patient/dashboard');
-        } else {
-          setIsVerifyingOtp(false);
-          setMessage(result.message || 'Login failed');
         }
       } else if (otpStep === 'delete') {
         // Handle account deletion
@@ -318,41 +281,6 @@ const PatientAuth: React.FC = () => {
           </div>
         )}
 
-        {/* Login Method Toggle */}
-        {isLogin && (
-          <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('password');
-                setMessage('');
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                loginMethod === 'password'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Password Login
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('otp');
-                setMessage('');
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center space-x-1 ${
-                loginMethod === 'otp'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              <span>Login with OTP</span>
-            </button>
-          </div>
-        )}
-
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           {!isLogin && (
@@ -465,26 +393,23 @@ const PatientAuth: React.FC = () => {
             </div>
           </div>
 
-          {/* Password fields only shown if NOT login or loginMethod === 'password' */}
-          {(!isLogin || loginMethod === 'password') && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Password *
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
-                  placeholder="Enter your password"
-                  required={!isLogin || loginMethod === 'password'}
-                />
-              </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Password *
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                placeholder="Enter your password"
+                required
+              />
             </div>
-          )}
+          </div>
 
           {!isLogin && (
             <div>
@@ -514,9 +439,7 @@ const PatientAuth: React.FC = () => {
             {isLoading
               ? 'Processing...'
               : isLogin
-              ? loginMethod === 'otp'
-                ? 'Send OTP to Login'
-                : 'Login'
+              ? 'Login'
               : 'Create Account (Send OTP)'}
           </button>
         </form>

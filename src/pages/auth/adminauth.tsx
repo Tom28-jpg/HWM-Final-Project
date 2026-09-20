@@ -1,16 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
-import { Building2, ArrowLeft, Mail, Lock, User, Phone, Trash2, Shield, KeyRound, Sparkles } from 'lucide-react';
+import { db } from '../../lib/firebase';
+import { doc, setDoc } from 'firebase/firestore';
+import { Building2, ArrowLeft, Mail, Lock, User, Phone, Trash2, Shield, Sparkles } from 'lucide-react';
 
 const AdminAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { login, loginWithGoogle, loginWithOtp, register } = useAuth();
+  const { login, loginWithGoogle, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
-  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpStep, setOtpStep] = useState<'signup' | 'login' | 'delete'>('signup');
+  const [otpStep, setOtpStep] = useState<'signup' | 'delete'>('signup');
   const [activeOtp, setActiveOtp] = useState('');
   const [otpTarget, setOtpTarget] = useState('');
   const [otpBanner, setOtpBanner] = useState('');
@@ -21,6 +22,11 @@ const AdminAuth: React.FC = () => {
     password: '',
     confirmPassword: '',
     position: '',
+    hospitalName: '',
+    hospitalLicenseNo: '',
+    hospitalAddress: '',
+    hospitalCity: '',
+    hospitalPhone: '',
   });
   const [deleteData, setDeleteData] = useState({
     identifier: '',
@@ -45,7 +51,7 @@ const AdminAuth: React.FC = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const sendOTP = (target: string, step: 'signup' | 'login' | 'delete') => {
+  const sendOTP = (target: string, step: 'signup' | 'delete') => {
     const generatedOtp = generateOTP();
     console.log(`OTP generated for ${target} (${step}): ${generatedOtp}`);
     setActiveOtp(generatedOtp);
@@ -62,37 +68,11 @@ const AdminAuth: React.FC = () => {
 
     try {
       if (isLogin) {
-        if (loginMethod === 'password') {
-          const result = await login(formData.email, formData.password, 'admin');
-          if (result.success) {
-            navigate('/admin/dashboard');
-          } else {
-            setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
-          }
+        const result = await login(formData.email, formData.password, 'admin');
+        if (result.success) {
+          navigate('/admin/dashboard');
         } else {
-          // Login via OTP
-          if (!formData.email) {
-            setMessage('Please enter your email, phone, or admin ID');
-            setIsLoading(false);
-            return;
-          }
-          const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
-          const user = users.find((u: any) => 
-            (u.email === formData.email || u.phone === formData.email || u.id === formData.email) &&
-            u.role === 'admin'
-          );
-          if (!user) {
-            setMessage('No admin account found with these details. Please register first or check your details.');
-            setIsLoading(false);
-            return;
-          }
-          const target = user.phone || user.email;
-          const generatedOtp = sendOTP(target, 'login');
-          setOtp(generatedOtp);
-          setOtpStep('login');
-          setShowOtpModal(true);
-          setIsLoading(false);
-          return;
+          setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
         }
       } else {
         if (formData.password !== formData.confirmPassword) {
@@ -137,6 +117,45 @@ const AdminAuth: React.FC = () => {
           
           if (result.success && result.userId) {
             setGeneratedId(result.userId);
+
+            // Automatically create and store the hospital in database with this admin's ID
+            const hospitalId = `HOSP_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
+            const newHospital = {
+              id: hospitalId,
+              name: signupData.hospitalName?.trim() || `${signupData.name}'s Medical Center`,
+              licenseNo: signupData.hospitalLicenseNo?.trim() || `LIC-${Date.now().toString().slice(-6)}`,
+              address: signupData.hospitalAddress?.trim() || `${signupData.hospitalCity || 'Healthcare Avenue'}, Tamil Nadu`,
+              city: signupData.hospitalCity?.trim() || '',
+              phone: signupData.hospitalPhone?.trim() || signupData.phone,
+              email: signupData.email,
+              adminId: result.userId,
+              deanName: signupData.name,
+              about: `Managed by ${signupData.name} (${signupData.position || 'Hospital Administrator'})`,
+              specialties: ['General Medicine', 'Emergency Care'],
+              totalBeds: 50,
+              availableBeds: 50,
+              icuBeds: 10,
+              availableIcuBeds: 10,
+              emergencyBeds: 10,
+              availableEmergencyBeds: 10,
+              generalBeds: 30,
+              availableGeneralBeds: 30,
+              registrationDate: new Date().toISOString().split('T')[0]
+            };
+
+            // Save immediately to Firestore database and local storage
+            setDoc(doc(db, 'hospitals', hospitalId), newHospital, { merge: true }).catch(() => {});
+            try {
+              const existingHospitals = JSON.parse(localStorage.getItem('wizards_hospitals') || '[]');
+              const updatedHospitals = [
+                ...existingHospitals.filter((h: any) => h.id !== hospitalId),
+                newHospital
+              ];
+              localStorage.setItem('wizards_hospitals', JSON.stringify(updatedHospitals));
+            } catch {
+              localStorage.setItem('wizards_hospitals', JSON.stringify([newHospital]));
+            }
+
             localStorage.removeItem('signup_otp');
             localStorage.removeItem('signup_data');
             setShowOtpModal(false);
@@ -153,16 +172,6 @@ const AdminAuth: React.FC = () => {
             setMessage(result.message || 'Registration failed');
             return;
           }
-        }
-      } else if (otpStep === 'login') {
-        const result = await loginWithOtp(formData.email, 'admin');
-        if (result.success) {
-          localStorage.removeItem('login_otp');
-          setShowOtpModal(false);
-          navigate('/admin/dashboard');
-        } else {
-          setIsVerifyingOtp(false);
-          setMessage(result.message || 'Login failed');
         }
       } else if (otpStep === 'delete') {
         const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
@@ -310,41 +319,6 @@ const AdminAuth: React.FC = () => {
           </div>
         )}
 
-        {/* Login Method Toggle */}
-        {isLogin && (
-          <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('password');
-                setMessage('');
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                loginMethod === 'password'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Password Login
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('otp');
-                setMessage('');
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center space-x-1 ${
-                loginMethod === 'otp'
-                  ? 'bg-white text-blue-600 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              <span>Login with OTP</span>
-            </button>
-          </div>
-        )}
-
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-6">
           {!isLogin && (
@@ -399,6 +373,88 @@ const AdminAuth: React.FC = () => {
                   required
                 />
               </div>
+
+              <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-3">
+                <div className="flex items-center gap-2">
+                  <Building2 className="h-5 w-5 text-blue-600 shrink-0" />
+                  <h4 className="text-sm font-semibold text-gray-900">Hospital / Clinic Details to Register</h4>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Hospital / Clinic Name *
+                  </label>
+                  <input
+                    type="text"
+                    name="hospitalName"
+                    value={formData.hospitalName}
+                    onChange={handleInputChange}
+                    className="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="e.g., City Specialty Hospital"
+                    required={!isLogin}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Registration / License Number *
+                  </label>
+                  <input
+                    type="text"
+                    name="hospitalLicenseNo"
+                    value={formData.hospitalLicenseNo}
+                    onChange={handleInputChange}
+                    className="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="e.g., MED-LIC-TN-2026-001"
+                    required={!isLogin}
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      City / District *
+                    </label>
+                    <input
+                      type="text"
+                      name="hospitalCity"
+                      value={formData.hospitalCity}
+                      onChange={handleInputChange}
+                      className="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="e.g., Chennai"
+                      required={!isLogin}
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                      Hospital Contact Phone
+                    </label>
+                    <input
+                      type="tel"
+                      name="hospitalPhone"
+                      value={formData.hospitalPhone}
+                      onChange={handleInputChange}
+                      className="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                      placeholder="e.g., +91 44 2621 0000"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">
+                    Full Hospital Address *
+                  </label>
+                  <input
+                    type="text"
+                    name="hospitalAddress"
+                    value={formData.hospitalAddress}
+                    onChange={handleInputChange}
+                    className="w-full px-3.5 py-2.5 text-sm bg-white border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                    placeholder="e.g., 42 Main Road, Anna Nagar, Chennai"
+                    required={!isLogin}
+                  />
+                </div>
+              </div>
             </>
           )}
 
@@ -420,25 +476,23 @@ const AdminAuth: React.FC = () => {
             </div>
           </div>
 
-          {(!isLogin || loginMethod === 'password') && (
-            <div className="transform transition-all duration-300 hover:scale-105">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password *
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
-                  placeholder="Enter secure password"
-                  required={!isLogin || loginMethod === 'password'}
-                />
-              </div>
+          <div className="transform transition-all duration-300 hover:scale-105">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Password *
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                placeholder="Enter secure password"
+                required
+              />
             </div>
-          )}
+          </div>
 
           {!isLogin && (
             <div className="transform transition-all duration-300 hover:scale-105">
@@ -468,9 +522,7 @@ const AdminAuth: React.FC = () => {
             {isLoading
               ? 'Processing...'
               : isLogin
-              ? loginMethod === 'otp'
-                ? 'Send OTP to Login'
-                : 'Login to Dashboard'
+              ? 'Login to Dashboard'
               : 'Register Admin Account (Send OTP)'}
           </button>
         </form>

@@ -212,6 +212,62 @@ const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 };
 
+// Comprehensive check for demo / test accounts and mock data
+export const isDemoOrTestEntity = (entity: any): boolean => {
+  if (!entity) return true;
+  const str = JSON.stringify(entity).toLowerCase();
+  
+  // Checks for demo emails or test usernames
+  if (
+    str.includes('@demo.com') ||
+    str.includes('demo@') ||
+    str.includes('udffg') ||
+    str.includes('concord textiles') ||
+    str.includes('9867849473')
+  ) {
+    return true;
+  }
+
+  // Checks for demo admin/user IDs
+  if (entity.adminId && (
+    entity.adminId.toLowerCase().includes('demo') ||
+    entity.adminId.includes('2024') ||
+    entity.adminId === 'ADM001' ||
+    entity.adminId === 'ADMIN20240001'
+  )) {
+    return true;
+  }
+
+  // Checks for demo IDs
+  if (typeof entity.id === 'string' && (
+    entity.id.startsWith('HOSPITAL01012026') ||
+    entity.id.toLowerCase().includes('demo') ||
+    entity.id === '1' ||
+    entity.id === '2' ||
+    entity.id === 'DOC001' ||
+    entity.id === 'PAT001' ||
+    entity.id === 'DOCTOR20240001' ||
+    entity.id === 'PATIENT20240001'
+  )) {
+    return true;
+  }
+
+  // Checks for mock hospital names
+  const mockNames = [
+    'City General Hospital & Trauma Center',
+    'Apollo Multispeciality Hospital & Research Center',
+    'Fortis Malar Hospital & Heart Institute',
+    'MIOT International Hospital & Orthopedic Clinic',
+    'Global Health City & Specialty Clinic',
+    'udffg'
+  ];
+  if (entity.name && mockNames.some(m => entity.name.toLowerCase().trim() === m.toLowerCase())) {
+    return true;
+  }
+
+  return false;
+};
+
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [hospitals, setHospitals] = useState<Hospital[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -229,121 +285,71 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedAppointments = localStorage.getItem('wizards_appointments');
     const savedNotifications = localStorage.getItem('wizards_notifications');
 
-    if (savedHospitals && JSON.parse(savedHospitals).length > 0) {
-      const parsed = JSON.parse(savedHospitals);
-      const migrated = parsed.map((h: Hospital) => ({
-        ...h,
-        generalBeds: h.generalBeds || Math.floor((h.totalBeds || 100) * 0.7),
-        availableGeneralBeds: h.availableGeneralBeds !== undefined ? h.availableGeneralBeds : Math.floor((h.totalBeds || 100) * 0.5)
-      }));
-      setHospitals(migrated);
+    if (savedHospitals) {
+      try {
+        const parsed = JSON.parse(savedHospitals);
+        const validHospitals = (Array.isArray(parsed) ? parsed : [])
+          .filter((h: Hospital) => !isDemoOrTestEntity(h))
+          .map((h: Hospital) => ({
+            ...h,
+            generalBeds: h.generalBeds || Math.floor((h.totalBeds || 100) * 0.7),
+            availableGeneralBeds: h.availableGeneralBeds !== undefined ? h.availableGeneralBeds : Math.floor((h.totalBeds || 100) * 0.5)
+          }));
+        setHospitals(validHospitals);
+        localStorage.setItem('wizards_hospitals', JSON.stringify(validHospitals));
+      } catch {
+        setHospitals([]);
+        localStorage.setItem('wizards_hospitals', JSON.stringify([]));
+      }
     } else {
-      // Seed default recognized hospitals with clear addresses & locations
-      const defaultHospitals: Hospital[] = [
-        {
-          id: 'HOSPITAL01012026000001',
-          name: 'City General Hospital & Trauma Center',
-          licenseNo: 'LIC-TN-CHE-2024-001',
-          address: '124 Healthcare Boulevard, Anna Nagar, Chennai, Tamil Nadu - 600040',
-          phone: '+91 44 2621 0000',
-          email: 'admin@citygeneral.health',
-          totalBeds: 250,
-          availableBeds: 85,
-          icuBeds: 40,
-          availableIcuBeds: 12,
-          emergencyBeds: 30,
-          availableEmergencyBeds: 9,
-          generalBeds: 180,
-          availableGeneralBeds: 64,
-          specialties: ['General Medicine', 'Cardiology', 'Orthopedics', 'Emergency Care', 'Pediatrics'],
-          registrationDate: '2026-01-01',
-          location: { latitude: 13.0850, longitude: 80.2100 }
-        },
-        {
-          id: 'HOSPITAL01012026000002',
-          name: 'Apollo Multispeciality Hospital & Research Center',
-          licenseNo: 'LIC-TN-CHE-2024-002',
-          address: '21 Greams Lane, Off Greams Road, Thousand Lights, Chennai, Tamil Nadu - 600006',
-          phone: '+91 44 2829 0200',
-          email: 'contact@apollocare.health',
-          totalBeds: 350,
-          availableBeds: 120,
-          icuBeds: 60,
-          availableIcuBeds: 18,
-          emergencyBeds: 45,
-          availableEmergencyBeds: 15,
-          generalBeds: 245,
-          availableGeneralBeds: 87,
-          specialties: ['Cardiology', 'Neurology', 'Oncology', 'Gastroenterology', 'Pulmonology'],
-          registrationDate: '2026-01-01',
-          location: { latitude: 13.0604, longitude: 80.2496 }
-        },
-        {
-          id: 'HOSPITAL01012026000003',
-          name: 'Fortis Malar Hospital & Heart Institute',
-          licenseNo: 'LIC-TN-CHE-2024-003',
-          address: '52, 1st Main Road, Gandhi Nagar, Adyar, Chennai, Tamil Nadu - 600020',
-          phone: '+91 44 4289 2222',
-          email: 'info@fortismalar.health',
-          totalBeds: 180,
-          availableBeds: 50,
-          icuBeds: 30,
-          availableIcuBeds: 8,
-          emergencyBeds: 20,
-          availableEmergencyBeds: 6,
-          generalBeds: 130,
-          availableGeneralBeds: 36,
-          specialties: ['Cardiology', 'Cardiothoracic Surgery', 'Nephrology', 'Dermatology'],
-          registrationDate: '2026-01-01',
-          location: { latitude: 13.0067, longitude: 80.2570 }
-        },
-        {
-          id: 'HOSPITAL01012026000004',
-          name: 'MIOT International Hospital & Orthopedic Clinic',
-          licenseNo: 'LIC-TN-CHE-2024-004',
-          address: '4/112, Mount Poonamallee Road, Manapakkam, Chennai, Tamil Nadu - 600089',
-          phone: '+91 44 4200 2288',
-          email: 'support@miotinternational.health',
-          totalBeds: 300,
-          availableBeds: 95,
-          icuBeds: 50,
-          availableIcuBeds: 14,
-          emergencyBeds: 35,
-          availableEmergencyBeds: 10,
-          generalBeds: 215,
-          availableGeneralBeds: 71,
-          specialties: ['Orthopedics', 'Joint Replacement', 'Trauma Care', 'Neurosurgery', 'Radiology'],
-          registrationDate: '2026-01-01',
-          location: { latitude: 13.0180, longitude: 80.1700 }
-        },
-        {
-          id: 'HOSPITAL01012026000005',
-          name: 'Global Health City & Specialty Clinic',
-          licenseNo: 'LIC-TN-CHE-2024-005',
-          address: '439, Cheran Nagar, Perumbakkam, Chennai, Tamil Nadu - 600100',
-          phone: '+91 44 4477 7000',
-          email: 'help@globalhealthcity.health',
-          totalBeds: 220,
-          availableBeds: 70,
-          icuBeds: 35,
-          availableIcuBeds: 10,
-          emergencyBeds: 25,
-          availableEmergencyBeds: 8,
-          generalBeds: 160,
-          availableGeneralBeds: 52,
-          specialties: ['Hepatology', 'Organ Transplant', 'Gastroenterology', 'General Surgery', 'Gynecology'],
-          registrationDate: '2026-01-01',
-          location: { latitude: 12.9050, longitude: 80.1920 }
-        }
-      ];
-      setHospitals(defaultHospitals);
-      localStorage.setItem('wizards_hospitals', JSON.stringify(defaultHospitals));
+      setHospitals([]);
+      localStorage.setItem('wizards_hospitals', JSON.stringify([]));
     }
-    if (savedDoctors) setDoctors(JSON.parse(savedDoctors));
-    if (savedPatients) setPatients(JSON.parse(savedPatients));
-    if (savedBloodInventory) setBloodInventory(JSON.parse(savedBloodInventory));
-    if (savedAppointments) setAppointments(JSON.parse(savedAppointments));
-    if (savedNotifications) setNotifications(JSON.parse(savedNotifications));
+
+    if (savedDoctors) {
+      try {
+        const parsed = JSON.parse(savedDoctors);
+        const validDocs = (Array.isArray(parsed) ? parsed : []).filter((d: Doctor) => !isDemoOrTestEntity(d));
+        setDoctors(validDocs);
+        localStorage.setItem('wizards_doctors', JSON.stringify(validDocs));
+      } catch {
+        setDoctors([]);
+      }
+    }
+    if (savedPatients) {
+      try {
+        const parsed = JSON.parse(savedPatients);
+        const validPats = (Array.isArray(parsed) ? parsed : []).filter((p: Patient) => !isDemoOrTestEntity(p));
+        setPatients(validPats);
+        localStorage.setItem('wizards_patients', JSON.stringify(validPats));
+      } catch {
+        setPatients([]);
+      }
+    }
+    if (savedBloodInventory) {
+      try {
+        setBloodInventory(JSON.parse(savedBloodInventory));
+      } catch {
+        setBloodInventory({});
+      }
+    }
+    if (savedAppointments) {
+      try {
+        const parsed = JSON.parse(savedAppointments);
+        const validAppts = (Array.isArray(parsed) ? parsed : []).filter((a: Appointment) => !isDemoOrTestEntity(a));
+        setAppointments(validAppts);
+        localStorage.setItem('wizards_appointments', JSON.stringify(validAppts));
+      } catch {
+        setAppointments([]);
+      }
+    }
+    if (savedNotifications) {
+      try {
+        setNotifications(JSON.parse(savedNotifications));
+      } catch {
+        setNotifications([]);
+      }
+    }
 
     // Try fetching from Firestore cloud if available with a graceful timeout
     const fetchFromFirestore = async () => {
@@ -366,18 +372,55 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ]) as any;
 
         if (hospSnap && !hospSnap.empty) {
-          const cloudHosp = hospSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as Hospital[];
+          const cloudHosp = hospSnap.docs
+            .map((d: any) => ({ ...d.data(), id: d.id }))
+            .filter((h: Hospital) => !isDemoOrTestEntity(h)) as Hospital[];
+
+          // Asynchronously clean up old demo documents in Firestore if any exist
+          hospSnap.docs.forEach((d: any) => {
+            const data = { ...d.data(), id: d.id };
+            if (isDemoOrTestEntity(data)) {
+              deleteDoc(doc(db, 'hospitals', d.id)).catch(() => {});
+              deleteDoc(doc(db, 'blood_inventory', d.id)).catch(() => {});
+            }
+          });
+
           setHospitals(cloudHosp);
+          localStorage.setItem('wizards_hospitals', JSON.stringify(cloudHosp));
         }
 
         if (docSnap && !docSnap.empty) {
-          const cloudDocs = docSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as Doctor[];
+          const cloudDocs = docSnap.docs
+            .map((d: any) => ({ ...d.data(), id: d.id }))
+            .filter((d: Doctor) => !isDemoOrTestEntity(d)) as Doctor[];
+
+          // Clean up demo doctors from Firestore
+          docSnap.docs.forEach((d: any) => {
+            const data = { ...d.data(), id: d.id };
+            if (isDemoOrTestEntity(data)) {
+              deleteDoc(doc(db, 'doctors', d.id)).catch(() => {});
+            }
+          });
+
           setDoctors(cloudDocs);
+          localStorage.setItem('wizards_doctors', JSON.stringify(cloudDocs));
         }
 
         if (apptSnap && !apptSnap.empty) {
-          const cloudAppts = apptSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as Appointment[];
+          const cloudAppts = apptSnap.docs
+            .map((d: any) => ({ ...d.data(), id: d.id }))
+            .filter((a: Appointment) => !isDemoOrTestEntity(a)) as Appointment[];
+
+          // Clean up demo appointments from Firestore
+          apptSnap.docs.forEach((d: any) => {
+            const data = { ...d.data(), id: d.id };
+            if (isDemoOrTestEntity(data)) {
+              deleteDoc(doc(db, 'appointments', d.id)).catch(() => {});
+            }
+          });
+
           setAppointments(cloudAppts);
+          localStorage.setItem('wizards_appointments', JSON.stringify(cloudAppts));
         }
       } catch {
         // Operates smoothly in local mode if network / cloud backend is connecting
@@ -387,39 +430,50 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     fetchFromFirestore();
   }, []);
 
-  // Save to localStorage & Cloud Firestore whenever data changes
+  // Save to localStorage & Cloud Firestore whenever data changes (ONLY for real non-demo items)
   useEffect(() => {
     localStorage.setItem('wizards_hospitals', JSON.stringify(hospitals));
     hospitals.forEach(h => {
-      setDoc(doc(db, 'hospitals', h.id), h, { merge: true }).catch(() => {});
+      if (!isDemoOrTestEntity(h)) {
+        setDoc(doc(db, 'hospitals', h.id), h, { merge: true }).catch(() => {});
+      }
     });
   }, [hospitals]);
 
   useEffect(() => {
     localStorage.setItem('wizards_doctors', JSON.stringify(doctors));
     doctors.forEach(d => {
-      setDoc(doc(db, 'doctors', d.id), d, { merge: true }).catch(() => {});
+      if (!isDemoOrTestEntity(d)) {
+        setDoc(doc(db, 'doctors', d.id), d, { merge: true }).catch(() => {});
+      }
     });
   }, [doctors]);
 
   useEffect(() => {
     localStorage.setItem('wizards_patients', JSON.stringify(patients));
     patients.forEach(p => {
-      setDoc(doc(db, 'patients', p.id), p, { merge: true }).catch(() => {});
+      if (!isDemoOrTestEntity(p)) {
+        setDoc(doc(db, 'patients', p.id), p, { merge: true }).catch(() => {});
+      }
     });
   }, [patients]);
 
   useEffect(() => {
     localStorage.setItem('wizards_blood_inventory', JSON.stringify(bloodInventory));
     Object.entries(bloodInventory).forEach(([hospId, inv]) => {
-      setDoc(doc(db, 'blood_inventory', hospId), inv, { merge: true }).catch(() => {});
+      const parentHosp = hospitals.find(h => h.id === hospId);
+      if (!parentHosp || !isDemoOrTestEntity(parentHosp)) {
+        setDoc(doc(db, 'blood_inventory', hospId), inv, { merge: true }).catch(() => {});
+      }
     });
-  }, [bloodInventory]);
+  }, [bloodInventory, hospitals]);
 
   useEffect(() => {
     localStorage.setItem('wizards_appointments', JSON.stringify(appointments));
     appointments.forEach(a => {
-      setDoc(doc(db, 'appointments', a.id), a, { merge: true }).catch(() => {});
+      if (!isDemoOrTestEntity(a)) {
+        setDoc(doc(db, 'appointments', a.id), a, { merge: true }).catch(() => {});
+      }
     });
   }, [appointments]);
 

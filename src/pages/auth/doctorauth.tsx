@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
-import { useData } from '../../contexts/datacontext';
+import { useData, isDemoOrTestEntity } from '../../contexts/datacontext';
 import { 
   Stethoscope, 
   ArrowLeft, 
@@ -13,7 +13,6 @@ import {
   Trash2, 
   Shield, 
   Phone, 
-  KeyRound, 
   Sparkles,
   Search,
   MapPin,
@@ -23,13 +22,12 @@ import {
 
 const DoctorAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { login, loginWithGoogle, loginWithOtp, register, deleteAccount } = useAuth();
+  const { login, loginWithGoogle, register, deleteAccount } = useAuth();
   const { hospitals, addDoctor, deleteUserFromData } = useData();
   const [isLogin, setIsLogin] = useState(true);
-  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpStep, setOtpStep] = useState<'signup' | 'login' | 'delete'>('signup');
+  const [otpStep, setOtpStep] = useState<'signup' | 'delete'>('signup');
   const [activeOtp, setActiveOtp] = useState('');
   const [otpTarget, setOtpTarget] = useState('');
   const [otpBanner, setOtpBanner] = useState('');
@@ -87,37 +85,11 @@ const DoctorAuth: React.FC = () => {
 
     try {
       if (isLogin) {
-        if (loginMethod === 'password') {
-          const result = await login(formData.email, formData.password, 'doctor');
-          if (result.success) {
-            navigate('/doctor/dashboard');
-          } else {
-            setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
-          }
+        const result = await login(formData.email, formData.password, 'doctor');
+        if (result.success) {
+          navigate('/doctor/dashboard');
         } else {
-          // Login via OTP
-          if (!formData.email) {
-            setMessage('Please enter your email, phone, or doctor ID');
-            setIsLoading(false);
-            return;
-          }
-          const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
-          const user = users.find((u: any) => 
-            (u.email === formData.email || u.phone === formData.email || u.id === formData.email) &&
-            u.role === 'doctor'
-          );
-          if (!user) {
-            setMessage('No doctor account found with these details. Please register first or check your details.');
-            setIsLoading(false);
-            return;
-          }
-          const target = user.phone || user.email;
-          const generatedOtp = sendOTP(target, 'login');
-          setOtp(generatedOtp);
-          setOtpStep('login');
-          setShowOtpModal(true);
-          setIsLoading(false);
-          return;
+          setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
         }
       } else {
         if (!formData.hospitalId) {
@@ -201,16 +173,6 @@ const DoctorAuth: React.FC = () => {
             setMessage(result.message || 'Registration failed');
             return;
           }
-        }
-      } else if (otpStep === 'login') {
-        const result = await loginWithOtp(formData.email, 'doctor');
-        if (result.success) {
-          localStorage.removeItem('login_otp');
-          setShowOtpModal(false);
-          navigate('/doctor/dashboard');
-        } else {
-          setIsVerifyingOtp(false);
-          setMessage(result.message || 'Login failed');
         }
       } else if (otpStep === 'delete') {
         const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
@@ -297,9 +259,12 @@ const DoctorAuth: React.FC = () => {
     }
   };
 
-  // Only show hospitals that are verified and registered on the platform
+  // Only show hospitals that are verified and registered by hospital admins in the database
   const registeredHospitals = hospitals.filter(
-    (hospital) => hospital && hospital.id && hospital.name && hospital.name.trim().length > 0
+    (hospital) => {
+      if (!hospital || !hospital.id || !hospital.name || hospital.name.trim().length === 0) return false;
+      return !isDemoOrTestEntity(hospital);
+    }
   );
 
   const filteredHospitals = registeredHospitals.filter((hospital) => {
@@ -383,41 +348,6 @@ const DoctorAuth: React.FC = () => {
                 {generatedId}
               </div>
             )}
-          </div>
-        )}
-
-        {/* Login Method Toggle */}
-        {isLogin && (
-          <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('password');
-                setMessage('');
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
-                loginMethod === 'password'
-                  ? 'bg-white text-green-700 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              Password Login
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLoginMethod('otp');
-                setMessage('');
-              }}
-              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center space-x-1 ${
-                loginMethod === 'otp'
-                  ? 'bg-white text-green-700 shadow-sm'
-                  : 'text-gray-600 hover:text-gray-900'
-              }`}
-            >
-              <KeyRound className="h-3.5 w-3.5" />
-              <span>Login with OTP</span>
-            </button>
           </div>
         )}
 
@@ -725,25 +655,23 @@ const DoctorAuth: React.FC = () => {
             </div>
           </div>
 
-          {(!isLogin || loginMethod === 'password') && (
-            <div className="transform transition-all duration-300 hover:scale-105">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password *
-              </label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                  type="password"
-                  name="password"
-                  value={formData.password}
-                  onChange={handleInputChange}
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                  placeholder="Enter secure password"
-                  required={!isLogin || loginMethod === 'password'}
-                />
-              </div>
+          <div className="transform transition-all duration-300 hover:scale-105">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Password *
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <input
+                type="password"
+                name="password"
+                value={formData.password}
+                onChange={handleInputChange}
+                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                placeholder="Enter secure password"
+                required
+              />
             </div>
-          )}
+          </div>
 
           {!isLogin && (
             <div className="transform transition-all duration-300 hover:scale-105">
@@ -773,9 +701,7 @@ const DoctorAuth: React.FC = () => {
             {isLoading
               ? 'Processing...'
               : isLogin
-              ? loginMethod === 'otp'
-                ? 'Send OTP to Login'
-                : 'Login'
+              ? 'Login'
               : 'Register (Send OTP)'}
           </button>
         </form>
