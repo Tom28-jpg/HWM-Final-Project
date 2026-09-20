@@ -241,28 +241,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (savedAppointments) setAppointments(JSON.parse(savedAppointments));
     if (savedNotifications) setNotifications(JSON.parse(savedNotifications));
 
-    // Try fetching from Firestore cloud if available
+    // Try fetching from Firestore cloud if available with a graceful timeout
     const fetchFromFirestore = async () => {
       try {
-        const hospSnap = await getDocs(collection(db, 'hospitals'));
-        if (!hospSnap.empty) {
-          const cloudHosp = hospSnap.docs.map(d => ({ ...d.data(), id: d.id })) as Hospital[];
+        // Query Firestore with safety
+        const fetchPromise = Promise.all([
+          getDocs(collection(db, 'hospitals')),
+          getDocs(collection(db, 'doctors')),
+          getDocs(collection(db, 'appointments'))
+        ]);
+        
+        // Don't hang or throw unhandled offline errors if Firestore is initializing or offline
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('timeout')), 4000)
+        );
+
+        const [hospSnap, docSnap, apptSnap] = await Promise.race([
+          fetchPromise,
+          timeoutPromise
+        ]) as any;
+
+        if (hospSnap && !hospSnap.empty) {
+          const cloudHosp = hospSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as Hospital[];
           setHospitals(cloudHosp);
         }
 
-        const docSnap = await getDocs(collection(db, 'doctors'));
-        if (!docSnap.empty) {
-          const cloudDocs = docSnap.docs.map(d => ({ ...d.data(), id: d.id })) as Doctor[];
+        if (docSnap && !docSnap.empty) {
+          const cloudDocs = docSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as Doctor[];
           setDoctors(cloudDocs);
         }
 
-        const apptSnap = await getDocs(collection(db, 'appointments'));
-        if (!apptSnap.empty) {
-          const cloudAppts = apptSnap.docs.map(d => ({ ...d.data(), id: d.id })) as Appointment[];
+        if (apptSnap && !apptSnap.empty) {
+          const cloudAppts = apptSnap.docs.map((d: any) => ({ ...d.data(), id: d.id })) as Appointment[];
           setAppointments(cloudAppts);
         }
-      } catch (e) {
-        console.warn('Firestore initial fetch note (fallback to local):', e);
+      } catch {
+        // Operates smoothly in local mode if network / cloud backend is connecting
       }
     };
 
