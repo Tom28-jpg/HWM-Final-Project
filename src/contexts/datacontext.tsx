@@ -512,7 +512,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateHospital = (id: string, data: Partial<Hospital>) => {
-    setHospitals(prev => prev.map(h => h.id === id ? { ...h, ...data } : h));
+    setHospitals(prev => {
+      const updated = prev.map(h => h.id === id ? { ...h, ...data } : h);
+      localStorage.setItem('wizards_hospitals', JSON.stringify(updated));
+      return updated;
+    });
+    const existing = hospitals.find(h => h.id === id);
+    const merged = existing ? { ...existing, ...data } : { ...data, id };
+    if (!isDemoOrTestEntity(merged)) {
+      setDoc(doc(db, 'hospitals', id), merged, { merge: true }).catch(err => {
+        console.warn('Failed to sync hospital update to Firestore:', err);
+      });
+    }
   };
 
   const getHospitalById = (id: string) => {
@@ -529,7 +540,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateDoctor = (id: string, data: Partial<Doctor>) => {
-    setDoctors(prev => prev.map(doc => doc.id === id ? { ...doc, ...data } : doc));
+    setDoctors(prev => {
+      const updated = prev.map(doc => doc.id === id ? { ...doc, ...data } : doc);
+      localStorage.setItem('wizards_doctors', JSON.stringify(updated));
+      return updated;
+    });
+    const existing = doctors.find(doc => doc.id === id);
+    const merged = existing ? { ...existing, ...data } : { ...data, id };
+    if (!isDemoOrTestEntity(merged)) {
+      setDoc(doc(db, 'doctors', id), merged, { merge: true }).catch(err => {
+        console.warn('Failed to sync doctor update to Firestore:', err);
+      });
+    }
   };
 
   const removeDoctor = (id: string) => {
@@ -551,7 +573,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updatePatient = (id: string, data: Partial<Patient>) => {
-    setPatients(prev => prev.map(pat => pat.id === id ? { ...pat, ...data } : pat));
+    setPatients(prev => {
+      const updated = prev.map(pat => pat.id === id ? { ...pat, ...data } : pat);
+      localStorage.setItem('wizards_patients', JSON.stringify(updated));
+      return updated;
+    });
+    const existing = patients.find(pat => pat.id === id);
+    const merged = existing ? { ...existing, ...data } : { ...data, id };
+    if (!isDemoOrTestEntity(merged)) {
+      setDoc(doc(db, 'patients', id), merged, { merge: true }).catch(err => {
+        console.warn('Failed to sync patient update to Firestore:', err);
+      });
+    }
   };
 
   const removePatient = (id: string) => {

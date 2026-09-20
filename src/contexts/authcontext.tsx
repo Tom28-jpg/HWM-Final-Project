@@ -330,19 +330,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(updatedUser);
     localStorage.setItem('wizards_current_user', JSON.stringify(updatedUser));
     
-    // Update in Firestore if firebaseUid exists
-    if (updatedUser.firebaseUid) {
+    // Update in Firestore across all relevant IDs
+    const idsToSync = new Set<string>();
+    if (updatedUser.firebaseUid) idsToSync.add(updatedUser.firebaseUid);
+    if (auth.currentUser?.uid) idsToSync.add(auth.currentUser.uid);
+    if (updatedUser.id) idsToSync.add(updatedUser.id);
+    if (user.id) idsToSync.add(user.id);
+
+    for (const docId of idsToSync) {
       try {
-        await setDoc(doc(db, 'users', updatedUser.firebaseUid), updatedUser, { merge: true });
+        await setDoc(doc(db, 'users', docId), updatedUser, { merge: true });
       } catch (err) {
-        console.warn('Failed to sync user update to Firestore:', err);
+        console.warn(`Failed to sync user update to Firestore users/${docId}:`, err);
       }
     }
 
     // Update in local users list
     const existingUsers = JSON.parse(localStorage.getItem('wizards_users') || '[]');
     const updatedUsers = existingUsers.map((u: any) => 
-      u.id === user.id ? { ...u, ...userData } : u
+      (u.id === user.id || (user.email && u.email === user.email)) ? { ...u, ...userData } : u
     );
     localStorage.setItem('wizards_users', JSON.stringify(updatedUsers));
   };

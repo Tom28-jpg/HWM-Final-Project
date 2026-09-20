@@ -233,14 +233,39 @@ const PatientDashboard: React.FC = () => {
     }
   };
 
-  const handleSaveProfile = () => {
-    updateUser(profileForm);
-    if (currentPatient) {
-      updatePatient(currentPatient.id, { ...patientProfile, ...profileForm });
-    } else {
-      addPatient({ ...patientProfile, ...profileForm });
+  const handleSaveProfile = async () => {
+    if (!profileForm.name.trim() || !profileForm.email.trim()) {
+      alert('Name and email are required fields');
+      return;
     }
-    setEditingProfile(false);
+
+    try {
+      await updateUser({
+        name: profileForm.name.trim(),
+        email: profileForm.email.trim(),
+        phone: profileForm.phone.trim(),
+      });
+      if (currentPatient) {
+        updatePatient(currentPatient.id, {
+          ...patientProfile,
+          name: profileForm.name.trim(),
+          email: profileForm.email.trim(),
+          phone: profileForm.phone.trim(),
+        });
+      } else {
+        addPatient({
+          ...patientProfile,
+          name: profileForm.name.trim(),
+          email: profileForm.email.trim(),
+          phone: profileForm.phone.trim(),
+        });
+      }
+      setEditingProfile(false);
+      alert('Patient profile updated in database successfully!');
+    } catch (err) {
+      console.error('Error saving patient profile:', err);
+      alert('Failed to save profile changes. Please try again.');
+    }
   };
 
   const handleDeleteAccount = async () => {

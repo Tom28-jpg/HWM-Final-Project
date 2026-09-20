@@ -32,11 +32,12 @@ import {
 
 const DoctorDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, deleteAccount } = useAuth();
+  const { user, logout, deleteAccount, updateUser } = useAuth();
   const { t } = useLanguage();
   const {
     hospitals,
     doctors,
+    addDoctor,
     updateDoctor,
     deleteUserFromData,
     updateHospital,
@@ -55,6 +56,8 @@ const DoctorDashboard: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedBloodType, setSelectedBloodType] = useState('A+');
 
+  // Find current doctor data
+  const currentDoctor = doctors.find(doc => doc.email === user?.email || doc.id === user?.id || (doc as any).userId === user?.id);
   const currentHospital = hospitals.find(h => h.id === currentDoctor?.hospitalId) || hospitals[0];
   const [bedCounts, setBedCounts] = useState({
     icu: currentHospital?.availableIcuBeds || 0,
@@ -62,24 +65,43 @@ const DoctorDashboard: React.FC = () => {
     general: currentHospital?.availableGeneralBeds || 0
   });
 
-  // Find current doctor data
-  const currentDoctor = doctors.find(doc => doc.email === user?.email);
-  const [doctorProfile, setDoctorProfile] = useState(currentDoctor || {
-    id: '',
-    userId: '',
-    hospitalId: '',
-    name: user?.name || '',
-    email: user?.email || '',
-    phone: '',
-    licenseNo: '',
-    specialization: '',
-    experienceYears: 0,
-    consultationFee: 0,
-    isAvailable: true,
-    isActive: true,
-    rating: 5.0,
-    totalPatients: 0,
+  const [doctorProfile, setDoctorProfile] = useState({
+    id: currentDoctor?.id || '',
+    userId: currentDoctor?.userId || user?.id || '',
+    hospitalId: currentDoctor?.hospitalId || hospitals[0]?.id || '',
+    name: currentDoctor?.name || user?.name || '',
+    email: currentDoctor?.email || user?.email || '',
+    phone: currentDoctor?.phone || user?.phone || '',
+    licenseNo: currentDoctor?.licenseNo || '',
+    specialization: currentDoctor?.specialization || 'General Medicine',
+    experienceYears: currentDoctor?.experienceYears || 0,
+    consultationFee: currentDoctor?.consultationFee || 500,
+    isAvailable: currentDoctor?.isAvailable ?? true,
+    isActive: currentDoctor?.isActive ?? true,
+    rating: currentDoctor?.rating || 5.0,
+    totalPatients: currentDoctor?.totalPatients || 0,
   });
+
+  useEffect(() => {
+    if (currentDoctor && !editingProfile) {
+      setDoctorProfile({
+        id: currentDoctor.id,
+        userId: currentDoctor.userId || user?.id || '',
+        hospitalId: currentDoctor.hospitalId || hospitals[0]?.id || '',
+        name: currentDoctor.name || user?.name || '',
+        email: currentDoctor.email || user?.email || '',
+        phone: currentDoctor.phone || user?.phone || '',
+        licenseNo: currentDoctor.licenseNo || '',
+        specialization: currentDoctor.specialization || 'General Medicine',
+        experienceYears: currentDoctor.experienceYears || 0,
+        consultationFee: currentDoctor.consultationFee || 500,
+        isAvailable: currentDoctor.isAvailable ?? true,
+        isActive: currentDoctor.isActive ?? true,
+        rating: currentDoctor.rating || 5.0,
+        totalPatients: currentDoctor.totalPatients || 0,
+      });
+    }
+  }, [currentDoctor, user, editingProfile, hospitals]);
 
   const tabs = [
     { id: 'overview', label: t('overview'), icon: Activity },
@@ -97,11 +119,38 @@ const DoctorDashboard: React.FC = () => {
     }
   };
 
-  const handleSaveProfile = () => {
-    if (currentDoctor) {
-      updateDoctor(currentDoctor.id, doctorProfile);
+  const handleSaveProfile = async () => {
+    try {
+      // 1. Update user auth state & Firestore user
+      await updateUser({
+        name: doctorProfile.name.trim(),
+        email: doctorProfile.email.trim(),
+        phone: doctorProfile.phone.trim(),
+      });
+
+      // 2. Update doctor entity in DataContext & Firestore
+      if (currentDoctor) {
+        updateDoctor(currentDoctor.id, {
+          ...doctorProfile,
+          name: doctorProfile.name.trim(),
+          email: doctorProfile.email.trim(),
+          phone: doctorProfile.phone.trim(),
+        });
+      } else {
+        addDoctor({
+          ...doctorProfile,
+          name: doctorProfile.name.trim(),
+          email: doctorProfile.email.trim(),
+          phone: doctorProfile.phone.trim(),
+        });
+      }
+
+      setEditingProfile(false);
+      alert('Doctor profile updated in database successfully!');
+    } catch (err) {
+      console.error('Error saving doctor profile:', err);
+      alert('Failed to save profile changes. Please try again.');
     }
-    setEditingProfile(false);
   };
 
   const handleDeleteAccount = async () => {
@@ -475,6 +524,73 @@ const DoctorDashboard: React.FC = () => {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
+                  <h4 className="font-semibold mb-3">{t('personalInfo')}</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('name')} *</label>
+                      {editingProfile ? (
+                        <input
+                          type="text"
+                          value={doctorProfile.name}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                          placeholder="Dr. Full Name"
+                          required
+                        />
+                      ) : (
+                        <p className="text-gray-900 font-medium">{currentDoctor?.name || user?.name}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')} *</label>
+                      {editingProfile ? (
+                        <input
+                          type="email"
+                          value={doctorProfile.email}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                          placeholder="doctor@hospital.com"
+                          required
+                        />
+                      ) : (
+                        <p className="text-gray-900">{currentDoctor?.email || user?.email}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone')}</label>
+                      {editingProfile ? (
+                        <input
+                          type="tel"
+                          value={doctorProfile.phone}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, phone: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                          placeholder="Phone number"
+                        />
+                      ) : (
+                        <p className="text-gray-900">{currentDoctor?.phone || user?.phone || t('notSet')}</p>
+                      )}
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Medical License Number</label>
+                      {editingProfile ? (
+                        <input
+                          type="text"
+                          value={doctorProfile.licenseNo}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, licenseNo: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                          placeholder="MED-REG-XXXX"
+                        />
+                      ) : (
+                        <p className="text-gray-900">{currentDoctor?.licenseNo || 'Not set'}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                <div>
                   <h4 className="font-semibold mb-3">{t('professionalInfo')}</h4>
                   <div className="space-y-3">
                     <div>
@@ -482,7 +598,7 @@ const DoctorDashboard: React.FC = () => {
                       {editingProfile ? (
                         <select
                           value={doctorProfile.specialization}
-                          onChange={(e) => setDoctorProfile({...doctorProfile, specialization: e.target.value})}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, specialization: e.target.value })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
                         >
                           <option value="">{t('selectSpecialization')}</option>
@@ -501,12 +617,31 @@ const DoctorDashboard: React.FC = () => {
                     </div>
 
                     <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('hospital')}</label>
+                      {editingProfile ? (
+                        <select
+                          value={doctorProfile.hospitalId}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, hospitalId: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
+                        >
+                          <option value="">Select Hospital</option>
+                          {hospitals.map((h) => (
+                            <option key={h.id} value={h.id}>{h.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <p className="text-gray-900">{hospitals.find(h => h.id === currentDoctor?.hospitalId)?.name || hospitals[0]?.name || t('notSet')}</p>
+                      )}
+                    </div>
+
+                    <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">{t('experience')} ({t('years')})</label>
                       {editingProfile ? (
                         <input
                           type="number"
+                          min="0"
                           value={doctorProfile.experienceYears}
-                          onChange={(e) => setDoctorProfile({...doctorProfile, experienceYears: parseInt(e.target.value) || 0})}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, experienceYears: parseInt(e.target.value) || 0 })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
                         />
                       ) : (
@@ -515,46 +650,18 @@ const DoctorDashboard: React.FC = () => {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('consultationFee')}</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('consultationFee')} (₹)</label>
                       {editingProfile ? (
                         <input
                           type="number"
+                          min="0"
                           value={doctorProfile.consultationFee}
-                          onChange={(e) => setDoctorProfile({...doctorProfile, consultationFee: parseInt(e.target.value) || 0})}
+                          onChange={(e) => setDoctorProfile({ ...doctorProfile, consultationFee: parseInt(e.target.value) || 0 })}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
                         />
                       ) : (
                         <p className="text-gray-900">₹{currentDoctor?.consultationFee || 0}</p>
                       )}
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-semibold mb-3">{t('contactInfo')}</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone')}</label>
-                      {editingProfile ? (
-                        <input
-                          type="tel"
-                          value={doctorProfile.phone}
-                          onChange={(e) => setDoctorProfile({...doctorProfile, phone: e.target.value})}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                        />
-                      ) : (
-                        <p className="text-gray-900">{currentDoctor?.phone || user?.phone || t('notSet')}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('hospital')}</label>
-                      <p className="text-gray-900">{hospitals[0]?.name || t('notSet')}</p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('department')}</label>
-                      <p className="text-gray-900">{currentDoctor?.specialization || t('notSet')}</p>
                     </div>
                   </div>
                 </div>

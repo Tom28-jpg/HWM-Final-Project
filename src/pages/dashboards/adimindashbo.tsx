@@ -28,7 +28,7 @@ import {
 
 const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
-  const { user, logout, deleteAccount } = useAuth();
+  const { user, logout, deleteAccount, updateUser } = useAuth();
   const { t } = useLanguage();
   const { 
     hospitals,
@@ -55,6 +55,7 @@ const AdminDashboard: React.FC = () => {
   const [showHospitalForm, setShowHospitalForm] = useState(false);
   const [showDoctorForm, setShowDoctorForm] = useState(false);
   const [editingDoctor, setEditingDoctor] = useState<any>(null);
+  const [editingAdminProfile, setEditingAdminProfile] = useState(false);
 
   // Find or create hospital for this admin
   const adminHospital = hospitals.find(h => h.adminId === user?.id || (user?.email && h.email === user?.email));
@@ -78,11 +79,47 @@ const AdminDashboard: React.FC = () => {
     registrationDate: new Date().toISOString().split('T')[0]
   });
 
+  const [adminProfileForm, setAdminProfileForm] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    phone: user?.phone || '',
+    hospitalName: adminHospital?.name || '',
+    hospitalAddress: adminHospital?.address || '',
+    hospitalPhone: adminHospital?.phone || '',
+    hospitalEmail: adminHospital?.email || '',
+    deanName: adminHospital?.deanName || '',
+    licenseNo: adminHospital?.licenseNo || '',
+    about: adminHospital?.about || '',
+    totalBeds: adminHospital?.totalBeds || 0,
+    icuBeds: adminHospital?.icuBeds || 0,
+    emergencyBeds: adminHospital?.emergencyBeds || 0,
+  });
+
   useEffect(() => {
     if (adminHospital) {
       setHospitalData(adminHospital);
     }
   }, [adminHospital]);
+
+  useEffect(() => {
+    if (!editingAdminProfile) {
+      setAdminProfileForm({
+        name: user?.name || '',
+        email: user?.email || '',
+        phone: user?.phone || '',
+        hospitalName: adminHospital?.name || '',
+        hospitalAddress: adminHospital?.address || '',
+        hospitalPhone: adminHospital?.phone || '',
+        hospitalEmail: adminHospital?.email || '',
+        deanName: adminHospital?.deanName || '',
+        licenseNo: adminHospital?.licenseNo || '',
+        about: adminHospital?.about || '',
+        totalBeds: adminHospital?.totalBeds || 0,
+        icuBeds: adminHospital?.icuBeds || 0,
+        emergencyBeds: adminHospital?.emergencyBeds || 0,
+      });
+    }
+  }, [user, adminHospital, editingAdminProfile]);
 
   const [doctorForm, setDoctorForm] = useState({
     name: '',
@@ -195,6 +232,83 @@ const AdminDashboard: React.FC = () => {
     
     // Show success message
     alert('Hospital information saved successfully in database!');
+  };
+
+  const handleSaveAdminProfile = async () => {
+    if (!adminProfileForm.name.trim() || !adminProfileForm.email.trim()) {
+      alert('Name and email are required fields');
+      return;
+    }
+
+    try {
+      // 1. Update user auth and database profile
+      await updateUser({
+        name: adminProfileForm.name.trim(),
+        email: adminProfileForm.email.trim(),
+        phone: adminProfileForm.phone.trim(),
+      });
+
+      // 2. Update or register hospital data in database
+      if (adminHospital) {
+        updateHospital(adminHospital.id, {
+          name: adminProfileForm.hospitalName,
+          address: adminProfileForm.hospitalAddress,
+          phone: adminProfileForm.hospitalPhone || adminProfileForm.phone,
+          email: adminProfileForm.hospitalEmail || adminProfileForm.email,
+          deanName: adminProfileForm.deanName,
+          licenseNo: adminProfileForm.licenseNo,
+          about: adminProfileForm.about,
+          totalBeds: Number(adminProfileForm.totalBeds) || 0,
+          icuBeds: Number(adminProfileForm.icuBeds) || 0,
+          emergencyBeds: Number(adminProfileForm.emergencyBeds) || 0,
+          adminId: user?.id || adminHospital.adminId,
+        });
+      } else if (adminProfileForm.hospitalName.trim()) {
+        const hospitalId = addHospital({
+          name: adminProfileForm.hospitalName.trim(),
+          address: adminProfileForm.hospitalAddress.trim(),
+          phone: adminProfileForm.hospitalPhone.trim() || adminProfileForm.phone.trim(),
+          email: adminProfileForm.hospitalEmail.trim() || adminProfileForm.email.trim(),
+          deanName: adminProfileForm.deanName.trim(),
+          licenseNo: adminProfileForm.licenseNo.trim(),
+          about: adminProfileForm.about.trim(),
+          specialties: [],
+          totalBeds: Number(adminProfileForm.totalBeds) || 0,
+          availableBeds: Number(adminProfileForm.totalBeds) || 0,
+          icuBeds: Number(adminProfileForm.icuBeds) || 0,
+          availableIcuBeds: Number(adminProfileForm.icuBeds) || 0,
+          emergencyBeds: Number(adminProfileForm.emergencyBeds) || 0,
+          availableEmergencyBeds: Number(adminProfileForm.emergencyBeds) || 0,
+          adminId: user?.id || '',
+        });
+        const newHospital = {
+          id: hospitalId,
+          name: adminProfileForm.hospitalName.trim(),
+          address: adminProfileForm.hospitalAddress.trim(),
+          phone: adminProfileForm.hospitalPhone.trim() || adminProfileForm.phone.trim(),
+          email: adminProfileForm.hospitalEmail.trim() || adminProfileForm.email.trim(),
+          deanName: adminProfileForm.deanName.trim(),
+          licenseNo: adminProfileForm.licenseNo.trim(),
+          about: adminProfileForm.about.trim(),
+          specialties: [],
+          totalBeds: Number(adminProfileForm.totalBeds) || 0,
+          availableBeds: Number(adminProfileForm.totalBeds) || 0,
+          icuBeds: Number(adminProfileForm.icuBeds) || 0,
+          availableIcuBeds: Number(adminProfileForm.icuBeds) || 0,
+          emergencyBeds: Number(adminProfileForm.emergencyBeds) || 0,
+          availableEmergencyBeds: Number(adminProfileForm.emergencyBeds) || 0,
+          adminId: user?.id || '',
+          registrationDate: new Date().toISOString().split('T')[0],
+        };
+        setHospitalData(newHospital);
+      }
+
+      setEditingAdminProfile(false);
+      alert('Admin profile and hospital details updated in database successfully!');
+    } catch (error) {
+      console.error('Error saving admin profile:', error);
+      alert('Failed to save profile changes. Please try again.');
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -701,7 +815,52 @@ const AdminDashboard: React.FC = () => {
       case 'profile':
         return (
           <div className="space-y-6 animate-fade-in">
-            <h2 className="text-2xl font-bold">Admin Profile</h2>
+            <div className="flex justify-between items-center">
+              <h2 className="text-2xl font-bold">Admin & Hospital Profile</h2>
+              {!editingAdminProfile ? (
+                <button
+                  onClick={() => setEditingAdminProfile(true)}
+                  className="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                >
+                  <Edit3 className="h-4 w-4" />
+                  <span>Edit Profile</span>
+                </button>
+              ) : (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleSaveAdminProfile}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                  >
+                    <Save className="h-4 w-4" />
+                    <span>Save to Database</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditingAdminProfile(false);
+                      setAdminProfileForm({
+                        name: user?.name || '',
+                        email: user?.email || '',
+                        phone: user?.phone || '',
+                        hospitalName: adminHospital?.name || '',
+                        hospitalAddress: adminHospital?.address || '',
+                        hospitalPhone: adminHospital?.phone || '',
+                        hospitalEmail: adminHospital?.email || '',
+                        deanName: adminHospital?.deanName || '',
+                        licenseNo: adminHospital?.licenseNo || '',
+                        about: adminHospital?.about || '',
+                        totalBeds: adminHospital?.totalBeds || 0,
+                        icuBeds: adminHospital?.icuBeds || 0,
+                        emergencyBeds: adminHospital?.emergencyBeds || 0,
+                      });
+                    }}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                  >
+                    <X className="h-4 w-4" />
+                    <span>Cancel</span>
+                  </button>
+                </div>
+              )}
+            </div>
             
             <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:shadow-lg">
               <div className="flex items-center space-x-4 mb-6">
@@ -711,47 +870,182 @@ const AdminDashboard: React.FC = () => {
                 <div>
                   <h3 className="text-xl font-semibold">{user?.name}</h3>
                   <p className="text-gray-600">{user?.email}</p>
-                  <p className="text-sm text-gray-500 font-mono">{user?.id}</p>
+                  <div className="flex items-center space-x-2 mt-1">
+                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold">
+                      Hospital Administrator
+                    </span>
+                    <span className="text-xs text-gray-500 font-mono">ID: {user?.id}</span>
+                  </div>
                 </div>
               </div>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="font-semibold mb-3">Personal Information</h4>
-                  <div className="space-y-3">
+                <div className="bg-purple-50/40 p-5 rounded-xl border border-purple-100">
+                  <h4 className="font-semibold text-purple-900 mb-4 flex items-center">
+                    <User className="h-4 w-4 mr-2 text-purple-600" />
+                    Administrator Personal Information
+                  </h4>
+                  <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
-                      <p className="text-gray-900">{user?.name}</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Admin Full Name *</label>
+                      {editingAdminProfile ? (
+                        <input
+                          type="text"
+                          value={adminProfileForm.name}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, name: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="Administrator Name"
+                          required
+                        />
+                      ) : (
+                        <p className="text-gray-900 font-medium">{user?.name}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                      <p className="text-gray-900">{user?.email}</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Admin Email *</label>
+                      {editingAdminProfile ? (
+                        <input
+                          type="email"
+                          value={adminProfileForm.email}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, email: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="admin@hospital.com"
+                          required
+                        />
+                      ) : (
+                        <p className="text-gray-900">{user?.email}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-                      <p className="text-gray-900">{user?.phone}</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Admin Phone Number</label>
+                      {editingAdminProfile ? (
+                        <input
+                          type="tel"
+                          value={adminProfileForm.phone}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, phone: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="Phone number"
+                        />
+                      ) : (
+                        <p className="text-gray-900">{user?.phone || 'Not set'}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
-                      <p className="text-gray-900">Hospital Administrator</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Account Role</label>
+                      <p className="text-gray-900 font-medium">Hospital Management Admin</p>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Registration Date</label>
+                      <p className="text-gray-700">{user?.registrationDate}</p>
                     </div>
                   </div>
                 </div>
                 
-                <div>
-                  <h4 className="font-semibold mb-3">Hospital Information</h4>
-                  <div className="space-y-3">
+                <div className="bg-blue-50/40 p-5 rounded-xl border border-blue-100">
+                  <h4 className="font-semibold text-blue-900 mb-4 flex items-center">
+                    <Building2 className="h-4 w-4 mr-2 text-blue-600" />
+                    Hospital & Facility Information
+                  </h4>
+                  <div className="space-y-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Hospital</label>
-                      <p className="text-gray-900">{adminHospital?.name || 'Not registered'}</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Hospital / Clinic Name</label>
+                      {editingAdminProfile ? (
+                        <input
+                          type="text"
+                          value={adminProfileForm.hospitalName}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, hospitalName: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="Hospital Name"
+                        />
+                      ) : (
+                        <p className="text-gray-900 font-medium">{adminHospital?.name || 'Not registered'}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">License No</label>
-                      <p className="text-gray-900">{adminHospital?.licenseNo || 'Not set'}</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Medical License / Reg Number</label>
+                      {editingAdminProfile ? (
+                        <input
+                          type="text"
+                          value={adminProfileForm.licenseNo}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, licenseNo: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="HOSP-REG-XXXX"
+                        />
+                      ) : (
+                        <p className="text-gray-900">{adminHospital?.licenseNo || 'Not set'}</p>
+                      )}
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Registration Date</label>
-                      <p className="text-gray-900">{user?.registrationDate}</p>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Dean / Medical Superintendent</label>
+                      {editingAdminProfile ? (
+                        <input
+                          type="text"
+                          value={adminProfileForm.deanName}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, deanName: e.target.value })}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="Dean / Director Name"
+                        />
+                      ) : (
+                        <p className="text-gray-900">{adminHospital?.deanName || 'Not set'}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Hospital Address</label>
+                      {editingAdminProfile ? (
+                        <textarea
+                          value={adminProfileForm.hospitalAddress}
+                          onChange={(e) => setAdminProfileForm({ ...adminProfileForm, hospitalAddress: e.target.value })}
+                          rows={2}
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                          placeholder="Full hospital address"
+                        />
+                      ) : (
+                        <p className="text-gray-900">{adminHospital?.address || 'Not set'}</p>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Total Beds</label>
+                        {editingAdminProfile ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={adminProfileForm.totalBeds}
+                            onChange={(e) => setAdminProfileForm({ ...adminProfileForm, totalBeds: parseInt(e.target.value) || 0 })}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-semibold">{adminHospital?.totalBeds || 0}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">ICU Beds</label>
+                        {editingAdminProfile ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={adminProfileForm.icuBeds}
+                            onChange={(e) => setAdminProfileForm({ ...adminProfileForm, icuBeds: parseInt(e.target.value) || 0 })}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-semibold">{adminHospital?.icuBeds || 0}</p>
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Emergency</label>
+                        {editingAdminProfile ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={adminProfileForm.emergencyBeds}
+                            onChange={(e) => setAdminProfileForm({ ...adminProfileForm, emergencyBeds: parseInt(e.target.value) || 0 })}
+                            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                          />
+                        ) : (
+                          <p className="text-gray-900 font-semibold">{adminHospital?.emergencyBeds || 0}</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
