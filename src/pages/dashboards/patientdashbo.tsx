@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
 import { useData } from '../../contexts/datacontext';
 import { useLanguage } from '../../contexts/languagecontext';
@@ -28,6 +29,7 @@ import {
 } from 'lucide-react';
 
 const PatientDashboard: React.FC = () => {
+  const navigate = useNavigate();
   const { user, logout, updateUser, deleteAccount } = useAuth();
   const { t } = useLanguage();
   const { 
@@ -36,6 +38,7 @@ const PatientDashboard: React.FC = () => {
     patients,
     addPatient,
     updatePatient,
+    deleteUserFromData,
     appointments,
     addAppointment,
     getAppointmentsByPatient,
@@ -242,9 +245,11 @@ const PatientDashboard: React.FC = () => {
 
   const handleDeleteAccount = async () => {
     if (user) {
+      await deleteUserFromData(user.id, user.email);
       const result = await deleteAccount(user.id);
       if (result.success) {
         alert('Account deleted successfully');
+        navigate('/');
       } else {
         alert(result.message || 'Failed to delete account');
       }

@@ -347,26 +347,137 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('wizards_users', JSON.stringify(updatedUsers));
   };
 
-  const deleteAccount = async (userId: string): Promise<{ success: boolean; message?: string }> => {
+  const deleteAccount = async (userId?: string): Promise<{ success: boolean; message?: string }> => {
     try {
-      if (user?.firebaseUid) {
+      const currentUser = user;
+      const targetUserId = userId || currentUser?.id;
+      const targetEmail = currentUser?.email;
+      const firebaseUid = currentUser?.firebaseUid || auth.currentUser?.uid;
+
+      // 1. Delete user from Firestore 'users' collection
+      if (firebaseUid) {
         try {
-          await deleteDoc(doc(db, 'users', user.firebaseUid));
+          await deleteDoc(doc(db, 'users', firebaseUid));
         } catch (err) {
-          console.warn('Failed to delete doc in Firestore:', err);
+          console.warn('Failed to delete doc by firebaseUid in Firestore:', err);
         }
       }
 
-      const existingUsers = JSON.parse(localStorage.getItem('wizards_users') || '[]');
-      const updatedUsers = existingUsers.filter((u: any) => u.id !== userId);
-      localStorage.setItem('wizards_users', JSON.stringify(updatedUsers));
-      
-      // If deleting current user, logout
-      if (user && user.id === userId) {
-        await logout();
+      // Also clean up across users, patients, doctors collections in Firestore
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const userDeletePromises: Promise<any>[] = [];
+        usersSnap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (
+            docSnap.id === firebaseUid ||
+            docSnap.id === targetUserId ||
+            data.id === targetUserId ||
+            (targetEmail && data.email === targetEmail) ||
+            (firebaseUid && data.firebaseUid === firebaseUid)
+          ) {
+            userDeletePromises.push(deleteDoc(doc(db, 'users', docSnap.id)).catch(() => {}));
+          }
+        });
+        await Promise.all(userDeletePromises);
+      } catch (err) {
+        console.warn('Firestore users collection search cleanup note:', err);
       }
-      
-      return { success: true, message: 'Account deleted successfully.' };
+
+      try {
+        const patSnap = await getDocs(collection(db, 'patients'));
+        const patDeletePromises: Promise<any>[] = [];
+        patSnap.forEach((docSnap) => {
+          const data = docSnap.data();
+          if (
+            docSnap.id === targetUserId ||
+            data.id === targetUserId ||
+            (targetEmail && data.email === targetEmail)
+          ) {
+            patDeletePromises.push(deleteDoc(doc(db, 'patients', docSnap.id)).catch(() => {}));
+          }
+        });
+        await Promise.all(patDeletePromises);
+      } catch (err) {
+        console.warn('Firestore patients cleanup note:', err);
+      }
+
+      try {
+        const docSnap = await getDocs(collection(db, 'doctors'));
+        const docDeletePromises: Promise<any>[] = [];
+        docSnap.forEach((docSnapItem) => {
+          const data = docSnapItem.data();
+          if (
+            docSnapItem.id === targetUserId ||
+            data.id === targetUserId ||
+            data.userId === targetUserId ||
+            (targetEmail && data.email === targetEmail)
+          ) {
+            docDeletePromises.push(deleteDoc(doc(db, 'doctors', docSnapItem.id)).catch(() => {}));
+          }
+        });
+        await Promise.all(docDeletePromises);
+      } catch (err) {
+        console.warn('Firestore doctors cleanup note:', err);
+      }
+
+      // 2. Delete user in Firebase Authentication (for Google or Email/Password)
+      const currentAuthUser = auth.currentUser;
+      if (currentAuthUser) {
+        try {
+          await currentAuthUser.delete();
+        } catch (authErr: any) {
+          console.warn('Firebase Auth user deletion (signing out as fallback):', authErr?.message);
+          try {
+            await firebaseSignOut(auth);
+          } catch (signoutErr) {
+            console.warn('Signout fallback note:', signoutErr);
+          }
+        }
+      }
+
+      // 3. Clean up localStorage
+      const existingUsers = JSON.parse(localStorage.getItem('wizards_users') || '[]');
+      const updatedUsers = existingUsers.filter((u: any) => {
+        if (targetUserId && u.id === targetUserId) return false;
+        if (targetEmail && u.email === targetEmail) return false;
+        if (firebaseUid && (u.firebaseUid === firebaseUid || u.id === firebaseUid)) return false;
+        return true;
+      });
+      localStorage.setItem('wizards_users', JSON.stringify(updatedUsers));
+
+      const existingPatients = JSON.parse(localStorage.getItem('wizards_patients') || '[]');
+      const updatedPatients = existingPatients.filter((p: any) => {
+        if (targetUserId && p.id === targetUserId) return false;
+        if (targetEmail && p.email === targetEmail) return false;
+        return true;
+      });
+      localStorage.setItem('wizards_patients', JSON.stringify(updatedPatients));
+
+      const existingDoctors = JSON.parse(localStorage.getItem('wizards_doctors') || '[]');
+      const updatedDoctors = existingDoctors.filter((d: any) => {
+        if (targetUserId && (d.id === targetUserId || d.userId === targetUserId)) return false;
+        if (targetEmail && d.email === targetEmail) return false;
+        return true;
+      });
+      localStorage.setItem('wizards_doctors', JSON.stringify(updatedDoctors));
+
+      const existingAppointments = JSON.parse(localStorage.getItem('wizards_appointments') || '[]');
+      const updatedAppointments = existingAppointments.filter((a: any) => {
+        if (targetUserId && (a.patientId === targetUserId || a.doctorId === targetUserId)) return false;
+        return true;
+      });
+      localStorage.setItem('wizards_appointments', JSON.stringify(updatedAppointments));
+
+      if (targetUserId) {
+        localStorage.removeItem(`medical_files_${targetUserId}`);
+      }
+      localStorage.removeItem('wizards_current_user');
+
+      // 4. Reset auth state in React
+      setUser(null);
+
+      return { success: true, message: 'Account and associated data deleted successfully.' };
     } catch (error) {
       console.error('Delete account failed:', error);
       return { success: false, message: 'Failed to delete account. Please try again.' };

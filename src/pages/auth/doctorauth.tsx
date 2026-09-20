@@ -2,12 +2,29 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
 import { useData } from '../../contexts/datacontext';
-import { Stethoscope, ArrowLeft, Mail, Lock, User, Building2, FileText, Trash2, Shield, Phone, KeyRound, Sparkles } from 'lucide-react';
+import { 
+  Stethoscope, 
+  ArrowLeft, 
+  Mail, 
+  Lock, 
+  User, 
+  Building2, 
+  FileText, 
+  Trash2, 
+  Shield, 
+  Phone, 
+  KeyRound, 
+  Sparkles,
+  Search,
+  MapPin,
+  CheckCircle2,
+  X
+} from 'lucide-react';
 
 const DoctorAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { login, loginWithGoogle, loginWithOtp, register } = useAuth();
-  const { hospitals } = useData();
+  const { login, loginWithGoogle, loginWithOtp, register, deleteAccount } = useAuth();
+  const { hospitals, addDoctor, deleteUserFromData } = useData();
   const [isLogin, setIsLogin] = useState(true);
   const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -16,6 +33,8 @@ const DoctorAuth: React.FC = () => {
   const [activeOtp, setActiveOtp] = useState('');
   const [otpTarget, setOtpTarget] = useState('');
   const [otpBanner, setOtpBanner] = useState('');
+  const [hospitalSearchQuery, setHospitalSearchQuery] = useState('');
+  const [isHospitalDropdownOpen, setIsHospitalDropdownOpen] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -101,6 +120,12 @@ const DoctorAuth: React.FC = () => {
           return;
         }
       } else {
+        if (!formData.hospitalId) {
+          setMessage('Please search and select your hospital or clinic to register.');
+          setIsLoading(false);
+          return;
+        }
+
         if (formData.password !== formData.confirmPassword) {
           setMessage('Passwords do not match');
           setIsLoading(false);
@@ -158,6 +183,8 @@ const DoctorAuth: React.FC = () => {
               totalPatients: 0
             };
             
+            addDoctor(doctorData);
+            
             // Store doctor data in localStorage for DataContext
             const existingDoctors = JSON.parse(localStorage.getItem('wizards_doctors') || '[]');
             existingDoctors.push(doctorData);
@@ -187,12 +214,22 @@ const DoctorAuth: React.FC = () => {
         }
       } else if (otpStep === 'delete') {
         const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
-        const updatedUsers = users.filter((user: any) => 
-          user.email !== deleteData.identifier && 
-          user.phone !== deleteData.identifier && 
-          user.id !== deleteData.identifier
+        const userToDelete = users.find((u: any) => 
+          u.email === deleteData.identifier || 
+          u.phone === deleteData.identifier || 
+          u.id === deleteData.identifier
         );
-        localStorage.setItem('wizards_users', JSON.stringify(updatedUsers));
+        if (userToDelete) {
+          await deleteUserFromData(userToDelete.id, userToDelete.email);
+          await deleteAccount(userToDelete.id);
+        } else {
+          const updatedUsers = users.filter((user: any) => 
+            user.email !== deleteData.identifier && 
+            user.phone !== deleteData.identifier && 
+            user.id !== deleteData.identifier
+          );
+          localStorage.setItem('wizards_users', JSON.stringify(updatedUsers));
+        }
         localStorage.removeItem('delete_otp');
         
         setShowOtpModal(false);
@@ -259,6 +296,24 @@ const DoctorAuth: React.FC = () => {
       setMessage(result.message || 'Google sign-in could not be completed.');
     }
   };
+
+  // Only show hospitals that are verified and registered on the platform
+  const registeredHospitals = hospitals.filter(
+    (hospital) => hospital && hospital.id && hospital.name && hospital.name.trim().length > 0
+  );
+
+  const filteredHospitals = registeredHospitals.filter((hospital) => {
+    if (!hospitalSearchQuery.trim()) return true;
+    const query = hospitalSearchQuery.toLowerCase();
+    const nameMatch = hospital.name?.toLowerCase().includes(query);
+    const addressMatch = hospital.address?.toLowerCase().includes(query);
+    const cityMatch = hospital.city?.toLowerCase().includes(query);
+    const licenseMatch = hospital.licenseNo?.toLowerCase().includes(query);
+    const specMatch = hospital.specialties?.some((s: string) => s.toLowerCase().includes(query));
+    return nameMatch || addressMatch || cityMatch || licenseMatch || specMatch;
+  });
+
+  const selectedHospital = registeredHospitals.find((h) => h.id === formData.hospitalId);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-green-50 to-green-100 flex items-center justify-center p-4 relative overflow-hidden">
@@ -424,27 +479,173 @@ const DoctorAuth: React.FC = () => {
                 </div>
               </div>
 
-              <div className="transform transition-all duration-300 hover:scale-105">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Hospital/Clinic *
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-gray-700 flex items-center justify-between">
+                  <span>Registered Hospital / Clinic *</span>
+                  {selectedHospital && (
+                    <span className="text-[11px] text-green-700 bg-green-50 px-2 py-0.5 rounded-full font-medium border border-green-200 flex items-center gap-1">
+                      <CheckCircle2 className="h-3 w-3 text-green-600" /> Platform Registered
+                    </span>
+                  )}
                 </label>
-                <div className="relative">
-                  <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <select
-                    name="hospitalId"
-                    value={formData.hospitalId}
-                    onChange={handleInputChange}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                    required
-                  >
-                    <option value="">Select Hospital</option>
-                    {hospitals.map(hospital => (
-                      <option key={hospital.id} value={hospital.id}>
-                        {hospital.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+
+                {/* Selected Hospital Display */}
+                {selectedHospital && !isHospitalDropdownOpen ? (
+                  <div className="bg-gradient-to-r from-green-50 via-emerald-50 to-teal-50 border border-green-300 rounded-xl p-3.5 shadow-xs transition-all duration-200">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-2.5 min-w-0">
+                        <div className="p-2 bg-green-600 text-white rounded-lg mt-0.5 shrink-0 shadow-xs">
+                          <Building2 className="h-4 w-4" />
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="font-semibold text-gray-900 text-sm leading-tight">
+                              {selectedHospital.name}
+                            </h4>
+                            <span className="inline-flex items-center text-[10px] font-semibold text-green-700 bg-green-100 px-1.5 py-0.5 rounded">
+                              <CheckCircle2 className="h-3 w-3 mr-0.5 text-green-600" /> Verified Facility
+                            </span>
+                          </div>
+                          {selectedHospital.licenseNo && (
+                            <p className="text-[11px] text-gray-600 font-mono">
+                              <span className="text-gray-500 font-sans">Reg / Lic:</span> {selectedHospital.licenseNo}
+                            </p>
+                          )}
+                          {selectedHospital.address && (
+                            <p className="text-xs text-gray-600 flex items-start gap-1">
+                              <MapPin className="h-3.5 w-3.5 text-red-500 shrink-0 mt-0.5" />
+                              <span className="break-words">{selectedHospital.address}</span>
+                            </p>
+                          )}
+                          {selectedHospital.phone && (
+                            <p className="text-[11px] text-gray-500 flex items-center gap-1">
+                              <Phone className="h-3 w-3 text-gray-400 shrink-0" />
+                              <span>{selectedHospital.phone}</span>
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsHospitalDropdownOpen(true);
+                          setHospitalSearchQuery('');
+                        }}
+                        className="text-xs font-semibold text-green-700 hover:text-green-800 bg-white hover:bg-green-100/70 border border-green-300 px-2.5 py-1 rounded-lg transition-colors shadow-2xs shrink-0"
+                      >
+                        Change
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="relative">
+                      <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                      <input
+                        type="text"
+                        value={hospitalSearchQuery}
+                        onChange={(e) => {
+                          setHospitalSearchQuery(e.target.value);
+                          setIsHospitalDropdownOpen(true);
+                        }}
+                        onFocus={() => setIsHospitalDropdownOpen(true)}
+                        placeholder="Search registered hospitals by name, license #, city, or address..."
+                        className="w-full pl-9 pr-9 py-2.5 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all shadow-2xs"
+                      />
+                      {hospitalSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => setHospitalSearchQuery('')}
+                          className="absolute right-2.5 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {isHospitalDropdownOpen && (
+                      <div className="absolute z-30 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto divide-y divide-gray-100 animate-fade-in">
+                        <div className="p-2 bg-gray-50 flex items-center justify-between text-xs text-gray-500 font-medium sticky top-0 border-b border-gray-200 z-10">
+                          <span className="flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-green-500"></span>
+                            {filteredHospitals.length} registered platform {filteredHospitals.length === 1 ? 'hospital' : 'hospitals'} found
+                          </span>
+                          {selectedHospital && (
+                            <button
+                              type="button"
+                              onClick={() => setIsHospitalDropdownOpen(false)}
+                              className="text-gray-600 hover:text-gray-900 font-semibold text-xs"
+                            >
+                              Done
+                            </button>
+                          )}
+                        </div>
+
+                        {filteredHospitals.length === 0 ? (
+                          <div className="p-5 text-center text-sm text-gray-500">
+                            <Building2 className="h-8 w-8 text-gray-300 mx-auto mb-2" />
+                            <p className="font-semibold text-gray-800 text-xs">
+                              {hospitalSearchQuery 
+                                ? `No registered hospitals found matching "${hospitalSearchQuery}"`
+                                : 'No registered hospitals available'}
+                            </p>
+                            <p className="text-[11px] text-gray-500 mt-1 leading-relaxed max-w-xs mx-auto">
+                              Only hospitals officially registered on the Wizards platform can be selected. If your facility is not registered, please ask your hospital administrator to register via the Admin portal.
+                            </p>
+                          </div>
+                        ) : (
+                          filteredHospitals.map((hospital) => {
+                            const isSelected = formData.hospitalId === hospital.id;
+                            return (
+                              <button
+                                key={hospital.id}
+                                type="button"
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, hospitalId: hospital.id }));
+                                  setIsHospitalDropdownOpen(false);
+                                  setHospitalSearchQuery('');
+                                }}
+                                className={`w-full text-left p-3 transition-colors flex items-start justify-between gap-2.5 hover:bg-green-50/80 cursor-pointer ${
+                                  isSelected ? 'bg-green-50 border-l-4 border-green-600' : ''
+                                }`}
+                              >
+                                <div className="space-y-1 min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="font-semibold text-gray-900 text-xs">
+                                      {hospital.name}
+                                    </span>
+                                    <span className="text-[10px] bg-green-100 text-green-800 px-1.5 py-0.2 rounded font-medium">
+                                      Registered
+                                    </span>
+                                    {hospital.city && (
+                                      <span className="text-[10px] bg-gray-100 text-gray-600 px-1 py-0.2 rounded">
+                                        {hospital.city}
+                                      </span>
+                                    )}
+                                  </div>
+                                  {hospital.licenseNo && (
+                                    <p className="text-[10px] text-gray-500 font-mono">
+                                      Lic: {hospital.licenseNo}
+                                    </p>
+                                  )}
+                                  <p className="text-[11px] text-gray-600 flex items-start gap-1">
+                                    <MapPin className="h-3 w-3 text-red-500 shrink-0 mt-0.5" />
+                                    <span className="line-clamp-2">{hospital.address || 'Address on file'}</span>
+                                  </p>
+                                </div>
+                                {isSelected && (
+                                  <span className="text-green-600 shrink-0 mt-0.5">
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="transform transition-all duration-300 hover:scale-105">

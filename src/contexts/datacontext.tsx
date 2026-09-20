@@ -29,6 +29,7 @@ interface Hospital {
   location?: { latitude: number; longitude: number };
   adminId: string;
   registrationDate: string;
+  city?: string;
 }
 
 interface Doctor {
@@ -125,6 +126,8 @@ interface DataContextType {
   patients: Patient[];
   addPatient: (patient: Omit<Patient, 'id'>) => void;
   updatePatient: (id: string, data: Partial<Patient>) => void;
+  removePatient: (id: string) => void;
+  deleteUserFromData: (userId: string, email?: string) => Promise<void>;
   
   // Blood inventory
   bloodInventory: { [hospitalId: string]: BloodInventory };
@@ -226,7 +229,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const savedAppointments = localStorage.getItem('wizards_appointments');
     const savedNotifications = localStorage.getItem('wizards_notifications');
 
-    if (savedHospitals) {
+    if (savedHospitals && JSON.parse(savedHospitals).length > 0) {
       const parsed = JSON.parse(savedHospitals);
       const migrated = parsed.map((h: Hospital) => ({
         ...h,
@@ -234,6 +237,107 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         availableGeneralBeds: h.availableGeneralBeds !== undefined ? h.availableGeneralBeds : Math.floor((h.totalBeds || 100) * 0.5)
       }));
       setHospitals(migrated);
+    } else {
+      // Seed default recognized hospitals with clear addresses & locations
+      const defaultHospitals: Hospital[] = [
+        {
+          id: 'HOSPITAL01012026000001',
+          name: 'City General Hospital & Trauma Center',
+          licenseNo: 'LIC-TN-CHE-2024-001',
+          address: '124 Healthcare Boulevard, Anna Nagar, Chennai, Tamil Nadu - 600040',
+          phone: '+91 44 2621 0000',
+          email: 'admin@citygeneral.health',
+          totalBeds: 250,
+          availableBeds: 85,
+          icuBeds: 40,
+          availableIcuBeds: 12,
+          emergencyBeds: 30,
+          availableEmergencyBeds: 9,
+          generalBeds: 180,
+          availableGeneralBeds: 64,
+          specialties: ['General Medicine', 'Cardiology', 'Orthopedics', 'Emergency Care', 'Pediatrics'],
+          registrationDate: '2026-01-01',
+          location: { latitude: 13.0850, longitude: 80.2100 }
+        },
+        {
+          id: 'HOSPITAL01012026000002',
+          name: 'Apollo Multispeciality Hospital & Research Center',
+          licenseNo: 'LIC-TN-CHE-2024-002',
+          address: '21 Greams Lane, Off Greams Road, Thousand Lights, Chennai, Tamil Nadu - 600006',
+          phone: '+91 44 2829 0200',
+          email: 'contact@apollocare.health',
+          totalBeds: 350,
+          availableBeds: 120,
+          icuBeds: 60,
+          availableIcuBeds: 18,
+          emergencyBeds: 45,
+          availableEmergencyBeds: 15,
+          generalBeds: 245,
+          availableGeneralBeds: 87,
+          specialties: ['Cardiology', 'Neurology', 'Oncology', 'Gastroenterology', 'Pulmonology'],
+          registrationDate: '2026-01-01',
+          location: { latitude: 13.0604, longitude: 80.2496 }
+        },
+        {
+          id: 'HOSPITAL01012026000003',
+          name: 'Fortis Malar Hospital & Heart Institute',
+          licenseNo: 'LIC-TN-CHE-2024-003',
+          address: '52, 1st Main Road, Gandhi Nagar, Adyar, Chennai, Tamil Nadu - 600020',
+          phone: '+91 44 4289 2222',
+          email: 'info@fortismalar.health',
+          totalBeds: 180,
+          availableBeds: 50,
+          icuBeds: 30,
+          availableIcuBeds: 8,
+          emergencyBeds: 20,
+          availableEmergencyBeds: 6,
+          generalBeds: 130,
+          availableGeneralBeds: 36,
+          specialties: ['Cardiology', 'Cardiothoracic Surgery', 'Nephrology', 'Dermatology'],
+          registrationDate: '2026-01-01',
+          location: { latitude: 13.0067, longitude: 80.2570 }
+        },
+        {
+          id: 'HOSPITAL01012026000004',
+          name: 'MIOT International Hospital & Orthopedic Clinic',
+          licenseNo: 'LIC-TN-CHE-2024-004',
+          address: '4/112, Mount Poonamallee Road, Manapakkam, Chennai, Tamil Nadu - 600089',
+          phone: '+91 44 4200 2288',
+          email: 'support@miotinternational.health',
+          totalBeds: 300,
+          availableBeds: 95,
+          icuBeds: 50,
+          availableIcuBeds: 14,
+          emergencyBeds: 35,
+          availableEmergencyBeds: 10,
+          generalBeds: 215,
+          availableGeneralBeds: 71,
+          specialties: ['Orthopedics', 'Joint Replacement', 'Trauma Care', 'Neurosurgery', 'Radiology'],
+          registrationDate: '2026-01-01',
+          location: { latitude: 13.0180, longitude: 80.1700 }
+        },
+        {
+          id: 'HOSPITAL01012026000005',
+          name: 'Global Health City & Specialty Clinic',
+          licenseNo: 'LIC-TN-CHE-2024-005',
+          address: '439, Cheran Nagar, Perumbakkam, Chennai, Tamil Nadu - 600100',
+          phone: '+91 44 4477 7000',
+          email: 'help@globalhealthcity.health',
+          totalBeds: 220,
+          availableBeds: 70,
+          icuBeds: 35,
+          availableIcuBeds: 10,
+          emergencyBeds: 25,
+          availableEmergencyBeds: 8,
+          generalBeds: 160,
+          availableGeneralBeds: 52,
+          specialties: ['Hepatology', 'Organ Transplant', 'Gastroenterology', 'General Surgery', 'Gynecology'],
+          registrationDate: '2026-01-01',
+          location: { latitude: 12.9050, longitude: 80.1920 }
+        }
+      ];
+      setHospitals(defaultHospitals);
+      localStorage.setItem('wizards_hospitals', JSON.stringify(defaultHospitals));
     }
     if (savedDoctors) setDoctors(JSON.parse(savedDoctors));
     if (savedPatients) setPatients(JSON.parse(savedPatients));
@@ -376,6 +480,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const removeDoctor = (id: string) => {
     setDoctors(prev => prev.filter(doc => doc.id !== id));
+    deleteDoc(doc(db, 'doctors', id)).catch(() => {});
   };
 
   const getDoctorsByHospital = (hospitalId: string) => {
@@ -393,6 +498,47 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updatePatient = (id: string, data: Partial<Patient>) => {
     setPatients(prev => prev.map(pat => pat.id === id ? { ...pat, ...data } : pat));
+  };
+
+  const removePatient = (id: string) => {
+    setPatients(prev => prev.filter(pat => pat.id !== id));
+    deleteDoc(doc(db, 'patients', id)).catch(() => {});
+  };
+
+  // Completely clean up a user's records from DataContext and Firestore
+  const deleteUserFromData = async (userId: string, email?: string) => {
+    // Remove matching patient records
+    setPatients(prev => {
+      const remaining = prev.filter(p => p.id !== userId && (!email || p.email !== email));
+      const removed = prev.filter(p => p.id === userId || (email && p.email === email));
+      removed.forEach(p => {
+        deleteDoc(doc(db, 'patients', p.id)).catch(() => {});
+      });
+      localStorage.setItem('wizards_patients', JSON.stringify(remaining));
+      return remaining;
+    });
+
+    // Remove matching doctor records
+    setDoctors(prev => {
+      const remaining = prev.filter(d => d.id !== userId && d.userId !== userId && (!email || d.email !== email));
+      const removed = prev.filter(d => d.id === userId || d.userId === userId || (email && d.email === email));
+      removed.forEach(d => {
+        deleteDoc(doc(db, 'doctors', d.id)).catch(() => {});
+      });
+      localStorage.setItem('wizards_doctors', JSON.stringify(remaining));
+      return remaining;
+    });
+
+    // Remove matching appointments
+    setAppointments(prev => {
+      const remaining = prev.filter(a => a.patientId !== userId && a.doctorId !== userId);
+      const removed = prev.filter(a => a.patientId === userId || a.doctorId === userId);
+      removed.forEach(a => {
+        deleteDoc(doc(db, 'appointments', a.id)).catch(() => {});
+      });
+      localStorage.setItem('wizards_appointments', JSON.stringify(remaining));
+      return remaining;
+    });
   };
 
   // Blood inventory functions
@@ -664,6 +810,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       patients,
       addPatient,
       updatePatient,
+      removePatient,
+      deleteUserFromData,
       bloodInventory,
       updateBloodInventory,
       getBloodInventoryByHospital,
