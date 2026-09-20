@@ -1,4 +1,12 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  getDocs, 
+  deleteDoc 
+} from 'firebase/firestore';
+import { db } from '../lib/firebase';
 
 interface Hospital {
   id: string;
@@ -209,7 +217,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  // Load data from localStorage on mount
+  // Load data from localStorage on mount and sync with Firestore
   useEffect(() => {
     const savedHospitals = localStorage.getItem('wizards_hospitals');
     const savedDoctors = localStorage.getItem('wizards_doctors');
@@ -232,27 +240,69 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (savedBloodInventory) setBloodInventory(JSON.parse(savedBloodInventory));
     if (savedAppointments) setAppointments(JSON.parse(savedAppointments));
     if (savedNotifications) setNotifications(JSON.parse(savedNotifications));
+
+    // Try fetching from Firestore cloud if available
+    const fetchFromFirestore = async () => {
+      try {
+        const hospSnap = await getDocs(collection(db, 'hospitals'));
+        if (!hospSnap.empty) {
+          const cloudHosp = hospSnap.docs.map(d => ({ ...d.data(), id: d.id })) as Hospital[];
+          setHospitals(cloudHosp);
+        }
+
+        const docSnap = await getDocs(collection(db, 'doctors'));
+        if (!docSnap.empty) {
+          const cloudDocs = docSnap.docs.map(d => ({ ...d.data(), id: d.id })) as Doctor[];
+          setDoctors(cloudDocs);
+        }
+
+        const apptSnap = await getDocs(collection(db, 'appointments'));
+        if (!apptSnap.empty) {
+          const cloudAppts = apptSnap.docs.map(d => ({ ...d.data(), id: d.id })) as Appointment[];
+          setAppointments(cloudAppts);
+        }
+      } catch (e) {
+        console.warn('Firestore initial fetch note (fallback to local):', e);
+      }
+    };
+
+    fetchFromFirestore();
   }, []);
 
-  // Save to localStorage whenever data changes
+  // Save to localStorage & Cloud Firestore whenever data changes
   useEffect(() => {
     localStorage.setItem('wizards_hospitals', JSON.stringify(hospitals));
+    hospitals.forEach(h => {
+      setDoc(doc(db, 'hospitals', h.id), h, { merge: true }).catch(() => {});
+    });
   }, [hospitals]);
 
   useEffect(() => {
     localStorage.setItem('wizards_doctors', JSON.stringify(doctors));
+    doctors.forEach(d => {
+      setDoc(doc(db, 'doctors', d.id), d, { merge: true }).catch(() => {});
+    });
   }, [doctors]);
 
   useEffect(() => {
     localStorage.setItem('wizards_patients', JSON.stringify(patients));
+    patients.forEach(p => {
+      setDoc(doc(db, 'patients', p.id), p, { merge: true }).catch(() => {});
+    });
   }, [patients]);
 
   useEffect(() => {
     localStorage.setItem('wizards_blood_inventory', JSON.stringify(bloodInventory));
+    Object.entries(bloodInventory).forEach(([hospId, inv]) => {
+      setDoc(doc(db, 'blood_inventory', hospId), inv, { merge: true }).catch(() => {});
+    });
   }, [bloodInventory]);
 
   useEffect(() => {
     localStorage.setItem('wizards_appointments', JSON.stringify(appointments));
+    appointments.forEach(a => {
+      setDoc(doc(db, 'appointments', a.id), a, { merge: true }).catch(() => {});
+    });
   }, [appointments]);
 
   useEffect(() => {

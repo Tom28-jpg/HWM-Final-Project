@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
-import { Building2, ArrowLeft, Mail, Lock, User, Phone, Trash2, Shield } from 'lucide-react';
+import { Building2, ArrowLeft, Mail, Lock, User, Phone, Trash2, Shield, KeyRound, Sparkles } from 'lucide-react';
 
 const AdminAuth: React.FC = () => {
   const navigate = useNavigate();
-  const { login, register } = useAuth();
+  const { login, loginWithGoogle, loginWithOtp, register } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
+  const [loginMethod, setLoginMethod] = useState<'password' | 'otp'>('password');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showOtpModal, setShowOtpModal] = useState(false);
-  const [otpStep, setOtpStep] = useState<'signup' | 'delete'>('signup');
+  const [otpStep, setOtpStep] = useState<'signup' | 'login' | 'delete'>('signup');
+  const [activeOtp, setActiveOtp] = useState('');
+  const [otpTarget, setOtpTarget] = useState('');
+  const [otpBanner, setOtpBanner] = useState('');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -41,10 +45,13 @@ const AdminAuth: React.FC = () => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  const sendOTP = (phone: string) => {
+  const sendOTP = (target: string, step: 'signup' | 'login' | 'delete') => {
     const generatedOtp = generateOTP();
-    console.log(`OTP sent to ${phone}: ${generatedOtp}`);
-    alert(`OTP sent to ${phone}: ${generatedOtp}`);
+    console.log(`OTP generated for ${target} (${step}): ${generatedOtp}`);
+    setActiveOtp(generatedOtp);
+    setOtpTarget(target);
+    localStorage.setItem(`${step}_otp`, generatedOtp);
+    setOtpBanner(`Verification code sent to ${target}: ${generatedOtp}`);
     return generatedOtp;
   };
 
@@ -55,11 +62,37 @@ const AdminAuth: React.FC = () => {
 
     try {
       if (isLogin) {
-        const result = await login(formData.email, formData.password, 'admin');
-        if (result.success) {
-          navigate('/admin/dashboard');
+        if (loginMethod === 'password') {
+          const result = await login(formData.email, formData.password, 'admin');
+          if (result.success) {
+            navigate('/admin/dashboard');
+          } else {
+            setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
+          }
         } else {
-          setMessage(result.message || 'The entered details do not match our database. Please check and try again.');
+          // Login via OTP
+          if (!formData.email) {
+            setMessage('Please enter your email, phone, or admin ID');
+            setIsLoading(false);
+            return;
+          }
+          const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
+          const user = users.find((u: any) => 
+            (u.email === formData.email || u.phone === formData.email || u.id === formData.email) &&
+            u.role === 'admin'
+          );
+          if (!user) {
+            setMessage('No admin account found with these details. Please register first or check your details.');
+            setIsLoading(false);
+            return;
+          }
+          const target = user.phone || user.email;
+          const generatedOtp = sendOTP(target, 'login');
+          setOtp(generatedOtp);
+          setOtpStep('login');
+          setShowOtpModal(true);
+          setIsLoading(false);
+          return;
         }
       } else {
         if (formData.password !== formData.confirmPassword) {
@@ -68,9 +101,9 @@ const AdminAuth: React.FC = () => {
           return;
         }
 
-        const generatedOtp = sendOTP(formData.phone);
-        localStorage.setItem('signup_otp', generatedOtp);
+        const generatedOtp = sendOTP(formData.phone, 'signup');
         localStorage.setItem('signup_data', JSON.stringify(formData));
+        setOtp(generatedOtp);
         setOtpStep('signup');
         setShowOtpModal(true);
         setIsLoading(false);
@@ -92,7 +125,7 @@ const AdminAuth: React.FC = () => {
       
       if (otp !== storedOtp) {
         setIsVerifyingOtp(false);
-        setMessage('Invalid OTP. Please try again.');
+        setMessage('Invalid OTP. Please enter the correct code.');
         return;
       }
 
@@ -107,18 +140,29 @@ const AdminAuth: React.FC = () => {
             localStorage.removeItem('signup_otp');
             localStorage.removeItem('signup_data');
             setShowOtpModal(false);
+            setMessage(`Registration successful! Your Admin ID is ${result.userId}`);
             
-            setTimeout(() => {
-              const loginResult = login(signupData.email, signupData.password, 'admin');
+            setTimeout(async () => {
+              const loginResult = await login(signupData.email, signupData.password, 'admin');
               if (loginResult.success) {
                 navigate('/admin/dashboard');
               }
-            }, 100);
+            }, 800);
           } else {
             setIsVerifyingOtp(false);
             setMessage(result.message || 'Registration failed');
             return;
           }
+        }
+      } else if (otpStep === 'login') {
+        const result = await loginWithOtp(formData.email, 'admin');
+        if (result.success) {
+          localStorage.removeItem('login_otp');
+          setShowOtpModal(false);
+          navigate('/admin/dashboard');
+        } else {
+          setIsVerifyingOtp(false);
+          setMessage(result.message || 'Login failed');
         }
       } else if (otpStep === 'delete') {
         const users = JSON.parse(localStorage.getItem('wizards_users') || '[]');
@@ -138,7 +182,7 @@ const AdminAuth: React.FC = () => {
       
       setOtp('');
       setIsVerifyingOtp(false);
-    }, 1500);
+    }, 800);
   };
 
   const handleDeleteAccount = () => {
@@ -159,8 +203,8 @@ const AdminAuth: React.FC = () => {
       return;
     }
 
-    const generatedOtp = sendOTP(user.phone);
-    localStorage.setItem('delete_otp', generatedOtp);
+    const generatedOtp = sendOTP(user.phone || user.email, 'delete');
+    setOtp(generatedOtp);
     setOtpStep('delete');
     setShowDeleteModal(false);
     setShowOtpModal(true);
@@ -171,6 +215,28 @@ const AdminAuth: React.FC = () => {
       ...formData,
       [e.target.name]: e.target.value,
     });
+  };
+
+  const fillDemoAdmin = () => {
+    setFormData((prev) => ({
+      ...prev,
+      email: 'admin@demo.com',
+      password: 'Password123!',
+    }));
+    setLoginMethod('password');
+    setMessage('Demo admin credentials filled!');
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    setMessage('');
+    const result = await loginWithGoogle('admin');
+    setIsLoading(false);
+    if (result.success) {
+      navigate('/admin/dashboard');
+    } else {
+      setMessage(result.message || 'Google sign-in could not be completed.');
+    }
   };
 
   return (
@@ -211,10 +277,27 @@ const AdminAuth: React.FC = () => {
           </p>
         </div>
 
+        {/* In-app OTP alert banner */}
+        {otpBanner && (
+          <div className="mb-4 p-3 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-800 text-xs flex items-center justify-between shadow-sm animate-fade-in">
+            <div className="flex items-center space-x-2">
+              <span className="text-base">📲</span>
+              <span className="font-medium">{otpBanner}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setOtpBanner('')}
+              className="text-emerald-700 hover:text-emerald-950 font-bold ml-2"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
         {/* Message Display */}
         {message && (
           <div className={`mb-4 p-3 rounded-lg text-center transition-all duration-300 ${
-            message.includes('successful') || generatedId
+            message.includes('successful') || generatedId || message.includes('filled')
               ? 'bg-green-100 text-green-800 border border-green-200'
               : 'bg-red-100 text-red-800 border border-red-200'
           }`}>
@@ -224,6 +307,41 @@ const AdminAuth: React.FC = () => {
                 {generatedId}
               </div>
             )}
+          </div>
+        )}
+
+        {/* Login Method Toggle */}
+        {isLogin && (
+          <div className="flex bg-gray-100 p-1 rounded-xl mb-6">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('password');
+                setMessage('');
+              }}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all ${
+                loginMethod === 'password'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              Password Login
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod('otp');
+                setMessage('');
+              }}
+              className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all flex items-center justify-center space-x-1 ${
+                loginMethod === 'otp'
+                  ? 'bg-white text-blue-600 shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              <KeyRound className="h-3.5 w-3.5" />
+              <span>Login with OTP</span>
+            </button>
           </div>
         )}
 
@@ -302,23 +420,25 @@ const AdminAuth: React.FC = () => {
             </div>
           </div>
 
-          <div className="transform transition-all duration-300 hover:scale-105">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Password *
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="password"
-                name="password"
-                value={formData.password}
-                onChange={handleInputChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
-                placeholder="Enter secure password"
-                required
-              />
+          {(!isLogin || loginMethod === 'password') && (
+            <div className="transform transition-all duration-300 hover:scale-105">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Password *
+              </label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <input
+                  type="password"
+                  name="password"
+                  value={formData.password}
+                  onChange={handleInputChange}
+                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-300"
+                  placeholder="Enter secure password"
+                  required={!isLogin || loginMethod === 'password'}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {!isLogin && (
             <div className="transform transition-all duration-300 hover:scale-105">
@@ -345,9 +465,69 @@ const AdminAuth: React.FC = () => {
             disabled={isLoading}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105"
           >
-            {isLoading ? 'Processing...' : isLogin ? 'Login to Dashboard' : 'Register Admin Account'}
+            {isLoading
+              ? 'Processing...'
+              : isLogin
+              ? loginMethod === 'otp'
+                ? 'Send OTP to Login'
+                : 'Login to Dashboard'
+              : 'Register Admin Account (Send OTP)'}
           </button>
         </form>
+
+        {/* Firebase Google Sign-In */}
+        <div className="mt-4">
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-gray-200"></div>
+            <span className="flex-shrink mx-3 text-gray-400 text-xs uppercase font-medium">Or continue with</span>
+            <div className="flex-grow border-t border-gray-200"></div>
+          </div>
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={isLoading}
+            className="w-full mt-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold py-2.5 px-4 border border-gray-300 rounded-lg shadow-sm flex items-center justify-center space-x-2 transition text-sm disabled:opacity-50"
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24">
+              <path
+                fill="#4285F4"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+              />
+              <path
+                fill="#EA4335"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+              />
+            </svg>
+            <span>Sign in with Google</span>
+          </button>
+        </div>
+
+        {/* Demo Quick Fill Box */}
+        {isLogin && (
+          <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-xl text-xs text-blue-900 flex items-center justify-between">
+            <div className="flex items-center space-x-1.5">
+              <Sparkles className="h-4 w-4 text-blue-600 flex-shrink-0" />
+              <div>
+                <span className="font-bold">Demo Admin:</span> admin@demo.com
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={fillDemoAdmin}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded font-semibold text-xs transition"
+            >
+              Fill Demo
+            </button>
+          </div>
+        )}
 
         {/* Delete Account Button */}
         {isLogin && (
@@ -418,35 +598,87 @@ const AdminAuth: React.FC = () => {
 
       {/* OTP Verification Modal */}
       {showOtpModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
-            <h3 className="text-lg font-semibold mb-4">
-              {otpStep === 'signup' ? 'Verify Phone Number' : 'Verify Account Deletion'}
-            </h3>
-            <p className="text-gray-600 mb-4">
-              Enter the 6-digit OTP sent to your phone number
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl max-w-md w-full mx-4 shadow-2xl animate-fade-in">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-gray-900">
+                {otpStep === 'signup'
+                  ? 'Verify Phone Number'
+                  : otpStep === 'login'
+                  ? 'Login with OTP'
+                  : 'Verify Account Deletion'}
+              </h3>
+              <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full font-semibold">
+                OTP Verification
+              </span>
+            </div>
+
+            {/* Prominent Verification Code Box */}
+            {activeOtp && (
+              <div className="bg-blue-50 border border-blue-200 rounded-xl p-3.5 mb-4 text-center shadow-inner">
+                <div className="flex items-center justify-between mb-1 text-xs text-blue-800 font-medium">
+                  <span>Simulated Delivery</span>
+                  <span>Target: {otpTarget}</span>
+                </div>
+                <div className="flex items-center justify-center space-x-3 my-2">
+                  <div className="font-mono text-3xl font-extrabold text-blue-900 tracking-widest bg-white px-4 py-1.5 rounded-lg border border-blue-300 shadow-sm">
+                    {activeOtp}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOtp(activeOtp)}
+                    className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold px-3 py-2 rounded-lg transition shadow flex items-center space-x-1"
+                  >
+                    <span>Auto-fill</span>
+                  </button>
+                </div>
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Click <strong>Auto-fill</strong> or enter the 6 digits below to complete verification.
+                </p>
+              </div>
+            )}
+
+            <p className="text-gray-600 text-sm mb-2">
+              Enter the 6-digit code sent to <span className="font-semibold text-gray-800">{otpTarget}</span>:
             </p>
+
             <input
               type="text"
               value={otp}
-              onChange={(e) => setOtp(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent mb-4 text-center text-lg tracking-widest"
+              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="w-full px-3 py-3 border-2 border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 mb-3 text-center text-2xl font-bold tracking-widest font-mono"
               placeholder="000000"
               maxLength={6}
+              autoFocus
             />
+
+            <div className="flex justify-between items-center text-xs text-gray-500 mb-4 px-1">
+              <span>Didn't receive the code?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const newOtp = sendOTP(otpTarget, otpStep);
+                  setOtp(newOtp);
+                }}
+                className="text-blue-600 hover:underline font-semibold"
+              >
+                Resend OTP
+              </button>
+            </div>
+
             <div className="flex space-x-2">
               <button
                 onClick={handleOtpVerification}
-                disabled={isVerifyingOtp}
-                className="flex-1 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isVerifyingOtp || otp.length < 6}
+                className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl hover:bg-blue-700 transition-colors font-semibold disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow"
               >
                 {isVerifyingOtp ? (
                   <div className="flex items-center justify-center">
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
                     Verifying...
                   </div>
                 ) : (
-                  'Verify OTP'
+                  'Verify & Proceed'
                 )}
               </button>
               <button
@@ -458,7 +690,7 @@ const AdminAuth: React.FC = () => {
                     localStorage.removeItem('signup_data');
                   }
                 }}
-                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors"
+                className="flex-1 bg-gray-200 hover:bg-gray-300 text-gray-700 py-2.5 rounded-xl font-semibold transition-colors text-sm"
               >
                 Cancel
               </button>
@@ -466,39 +698,6 @@ const AdminAuth: React.FC = () => {
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        @keyframes blob {
-          0% {
-            transform: translate(0px, 0px) scale(1);
-          }
-          33% {
-            transform: translate(30px, -50px) scale(1.1);
-          }
-          66% {
-            transform: translate(-20px, 20px) scale(0.9);
-          }
-          100% {
-            transform: translate(0px, 0px) scale(1);
-          }
-        }
-        .animate-blob {
-          animation: blob 7s infinite;
-        }
-        .animation-delay-2000 {
-          animation-delay: 2s;
-        }
-        .animation-delay-4000 {
-          animation-delay: 4s;
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.5s ease-in;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 };

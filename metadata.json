@@ -1,0 +1,6 @@
+{
+  "name": "WIZARDS - Digital Healthcare Platform",
+  "description": "Comprehensive digital health services for patients, doctors, and hospitals",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
