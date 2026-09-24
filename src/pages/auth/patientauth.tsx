@@ -193,7 +193,6 @@ const PatientAuth: React.FC = () => {
       email: 'patient@demo.com',
       password: 'Password123!',
     }));
-    setLoginMethod('password');
     setMessage('Demo patient credentials filled!');
   };
 

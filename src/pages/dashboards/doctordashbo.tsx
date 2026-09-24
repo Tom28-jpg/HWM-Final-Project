@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
 import { useData } from '../../contexts/datacontext';
@@ -13,7 +13,6 @@ import {
   User,
   Clock,
   Phone,
-  MessageCircle,
   FileText,
   Activity,
   LogOut,
@@ -27,7 +26,8 @@ import {
   Bed,
   Droplet,
   Plus,
-  Minus
+  Minus,
+  Check
 } from 'lucide-react';
 
 const DoctorDashboard: React.FC = () => {
@@ -55,6 +55,10 @@ const DoctorDashboard: React.FC = () => {
   const [editingProfile, setEditingProfile] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectedBloodType, setSelectedBloodType] = useState('A+');
+  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'pending' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  const [selectedApptForNotes, setSelectedApptForNotes] = useState<any>(null);
+  const [clinicalNotes, setClinicalNotes] = useState('');
+  const [prescriptionText, setPrescriptionText] = useState('');
 
   // Find current doctor data
   const currentDoctor = doctors.find(doc => doc.email === user?.email || doc.id === user?.id || (doc as any).userId === user?.id);
@@ -100,15 +104,26 @@ const DoctorDashboard: React.FC = () => {
         rating: currentDoctor.rating || 5.0,
         totalPatients: currentDoctor.totalPatients || 0,
       });
+      setAvailability(currentDoctor.isAvailable);
     }
   }, [currentDoctor, user, editingProfile, hospitals]);
 
+  useEffect(() => {
+    if (currentHospital) {
+      setBedCounts({
+        icu: currentHospital.availableIcuBeds || 0,
+        emergency: currentHospital.availableEmergencyBeds || 0,
+        general: currentHospital.availableGeneralBeds || 0
+      });
+    }
+  }, [currentHospital]);
+
   const tabs = [
-    { id: 'overview', label: t('overview'), icon: Activity },
-    { id: 'appointments', label: t('appointments'), icon: Calendar },
-    { id: 'patients', label: t('patients'), icon: Users },
-    { id: 'hospital', label: t('hospitalInfo'), icon: Building2 },
-    { id: 'profile', label: t('profile'), icon: User },
+    { id: 'overview', label: t('overview') || 'Overview', icon: Activity },
+    { id: 'appointments', label: t('appointments') || 'Appointments', icon: Calendar },
+    { id: 'patients', label: t('patients') || 'Patients', icon: Users },
+    { id: 'hospital', label: t('hospitalInfo') || 'Hospital & Beds', icon: Building2 },
+    { id: 'profile', label: t('profile') || 'Doctor Profile', icon: User },
   ];
 
   const handleToggleAvailability = () => {
@@ -121,14 +136,12 @@ const DoctorDashboard: React.FC = () => {
 
   const handleSaveProfile = async () => {
     try {
-      // 1. Update user auth state & Firestore user
       await updateUser({
         name: doctorProfile.name.trim(),
         email: doctorProfile.email.trim(),
         phone: doctorProfile.phone.trim(),
       });
 
-      // 2. Update doctor entity in DataContext & Firestore
       if (currentDoctor) {
         updateDoctor(currentDoctor.id, {
           ...doctorProfile,
@@ -167,8 +180,22 @@ const DoctorDashboard: React.FC = () => {
     setShowDeleteModal(false);
   };
 
-  const handleAppointmentUpdate = (appointmentId: string, status: string, notes?: string, prescription?: string) => {
-    updateAppointment(appointmentId, { status, notes, prescription });
+  const handleAppointmentStatus = (appointmentId: string, status: 'confirmed' | 'completed' | 'cancelled') => {
+    updateAppointment(appointmentId, { status });
+    alert(`Appointment status updated to ${status}.`);
+  };
+
+  const handleSaveClinicalNotes = () => {
+    if (!selectedApptForNotes) return;
+    updateAppointment(selectedApptForNotes.id, {
+      notes: clinicalNotes,
+      prescription: prescriptionText,
+      status: 'completed'
+    });
+    setSelectedApptForNotes(null);
+    setClinicalNotes('');
+    setPrescriptionText('');
+    alert('Clinical notes & prescription updated. Consultation marked as completed.');
   };
 
   const handleBedCountChange = (type: 'icu' | 'emergency' | 'general', delta: number) => {
@@ -198,31 +225,34 @@ const DoctorDashboard: React.FC = () => {
     return Math.round((occupied / total) * 100);
   };
 
-  // Get doctor's appointments
+  // Doctor's appointments
   const doctorAppointments = appointments.filter(apt => 
-    currentDoctor && apt.doctorId === currentDoctor.id
+    currentDoctor && (apt.doctorId === currentDoctor.id || apt.doctorId === user?.id)
   );
 
-  // Get doctor's notifications
   const doctorNotifications = notifications.filter(n => 
-    currentDoctor && n.userId === currentDoctor.id
+    currentDoctor && (n.userId === currentDoctor.id || n.userId === user?.id)
   );
 
-  // Get today's appointments
   const todayAppointments = doctorAppointments.filter(apt => 
     apt.date === new Date().toISOString().split('T')[0]
   );
 
-  const getStats = () => {
-    return {
-      todayAppointments: todayAppointments.length,
-      totalPatients: doctorAppointments.filter(apt => apt.status === 'completed').length,
-      pendingReviews: doctorAppointments.filter(apt => apt.status === 'confirmed').length,
-      availableBeds: hospitals[0]?.availableBeds || 0,
-    };
+  const stats = {
+    todayAppointments: todayAppointments.length,
+    totalPatients: doctorAppointments.filter(apt => apt.status === 'completed').length,
+    pendingReviews: doctorAppointments.filter(apt => apt.status === 'pending' || apt.status === 'confirmed').length,
+    availableBeds: currentHospital?.availableBeds || 0,
   };
 
-  const stats = getStats();
+  const filteredAppointments = doctorAppointments.filter(apt => {
+    if (appointmentFilter === 'all') return true;
+    return apt.status === appointmentFilter;
+  });
+
+  // Doctor's patient list
+  const doctorPatientIds = new Set(doctorAppointments.map(a => a.patientId));
+  const doctorPatientList = patients.filter(p => doctorPatientIds.has(p.id));
 
   const renderTabContent = () => {
     switch (activeTab) {
@@ -230,242 +260,326 @@ const DoctorDashboard: React.FC = () => {
         return (
           <div className="space-y-6 animate-fade-in">
             {/* Welcome Section */}
-            <div className="bg-gradient-to-r from-green-500 to-green-600 text-white p-6 rounded-xl transform transition-all duration-300 hover:scale-105">
-              <div className="flex justify-between items-center">
+            <div className="bg-gradient-to-r from-emerald-600 to-teal-700 text-white p-6 rounded-2xl shadow-md">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-2xl font-bold mb-2">{t('welcome')}, {user?.name}!</h2>
-                  <p className="opacity-90">{hospitals[0]?.name || 'Hospital'} • {currentDoctor?.specialization || 'Doctor'}</p>
+                  <h2 className="text-2xl font-bold">{t('welcome') || 'Welcome'}, Dr. {user?.name}!</h2>
+                  <p className="opacity-90 mt-1">{currentHospital?.name || 'Hospital'} • {currentDoctor?.specialization || 'Specialist'}</p>
+                  <p className="text-xs opacity-75 mt-1 font-mono">Doctor ID: {user?.id}</p>
                 </div>
-                <div className="text-right">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <div className={`w-3 h-3 rounded-full ${availability ? 'bg-green-300' : 'bg-red-300'}`}></div>
-                    <span className="text-sm">{availability ? t('available') : t('unavailable')}</span>
-                  </div>
+                <div className="flex items-center space-x-3 bg-white/10 p-2.5 rounded-xl">
+                  <div className={`w-3 h-3 rounded-full ${availability ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`}></div>
+                  <span className="text-xs font-semibold">{availability ? 'Accepting Patients' : 'Doctor Unavailable'}</span>
                   <button
                     onClick={handleToggleAvailability}
-                    className="bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg text-sm transition-all duration-300 transform hover:scale-105"
+                    className="bg-white text-emerald-800 hover:bg-emerald-50 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ml-2"
                   >
-                    {t('toggleStatus')}
+                    Toggle Status
                   </button>
                 </div>
               </div>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:scale-105 hover:shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">{t('todayAppointments')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.todayAppointments}</p>
-                  </div>
-                  <Calendar className="h-8 w-8 text-blue-500" />
-                </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-2xl shadow-sm border">
+                <p className="text-xs text-gray-500 font-semibold uppercase">Today's Consultations</p>
+                <p className="text-2xl font-bold text-gray-900 mt-1">{stats.todayAppointments}</p>
               </div>
-              
-              <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:scale-105 hover:shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">{t('totalPatients')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.totalPatients}</p>
-                  </div>
-                  <Users className="h-8 w-8 text-green-500" />
-                </div>
+              <div className="bg-white p-5 rounded-2xl shadow-sm border">
+                <p className="text-xs text-gray-500 font-semibold uppercase">Completed Patients</p>
+                <p className="text-2xl font-bold text-emerald-600 mt-1">{stats.totalPatients}</p>
               </div>
-              
-              <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:scale-105 hover:shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">{t('pendingReviews')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.pendingReviews}</p>
-                  </div>
-                  <FileText className="h-8 w-8 text-orange-500" />
-                </div>
+              <div className="bg-white p-5 rounded-2xl shadow-sm border">
+                <p className="text-xs text-gray-500 font-semibold uppercase">Pending Schedule</p>
+                <p className="text-2xl font-bold text-amber-600 mt-1">{stats.pendingReviews}</p>
               </div>
-              
-              <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:scale-105 hover:shadow-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">{t('availableBeds')}</p>
-                    <p className="text-2xl font-bold text-gray-900">{stats.availableBeds}</p>
-                  </div>
-                  <Building2 className="h-8 w-8 text-purple-500" />
-                </div>
-              </div>
-            </div>
-
-            {/* Bed Management */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Bed className="h-5 w-5 mr-2 text-blue-500" />
-                {t('bedManagement')}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* ICU Beds */}
-                <div className="bg-red-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-red-900">{t('icuBeds')}</span>
-                    <span className="text-xs text-red-700">{getBedOccupancy('icu')}% {t('occupied')}</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      onClick={() => handleBedCountChange('icu', -1)}
-                      className="p-2 bg-red-200 hover:bg-red-300 rounded-lg transition-colors"
-                    >
-                      <Minus className="h-4 w-4 text-red-900" />
-                    </button>
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-red-900">{bedCounts.icu}</div>
-                      <div className="text-xs text-red-700">of {currentHospital?.icuBeds || 0}</div>
-                    </div>
-                    <button
-                      onClick={() => handleBedCountChange('icu', 1)}
-                      className="p-2 bg-red-200 hover:bg-red-300 rounded-lg transition-colors"
-                    >
-                      <Plus className="h-4 w-4 text-red-900" />
-                    </button>
-                  </div>
-                  <div className="w-full bg-red-200 rounded-full h-2">
-                    <div
-                      className="bg-red-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${getBedOccupancy('icu')}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* Emergency Beds */}
-                <div className="bg-orange-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-orange-900">{t('emergencyBeds')}</span>
-                    <span className="text-xs text-orange-700">{getBedOccupancy('emergency')}% {t('occupied')}</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      onClick={() => handleBedCountChange('emergency', -1)}
-                      className="p-2 bg-orange-200 hover:bg-orange-300 rounded-lg transition-colors"
-                    >
-                      <Minus className="h-4 w-4 text-orange-900" />
-                    </button>
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-orange-900">{bedCounts.emergency}</div>
-                      <div className="text-xs text-orange-700">of {currentHospital?.emergencyBeds || 0}</div>
-                    </div>
-                    <button
-                      onClick={() => handleBedCountChange('emergency', 1)}
-                      className="p-2 bg-orange-200 hover:bg-orange-300 rounded-lg transition-colors"
-                    >
-                      <Plus className="h-4 w-4 text-orange-900" />
-                    </button>
-                  </div>
-                  <div className="w-full bg-orange-200 rounded-full h-2">
-                    <div
-                      className="bg-orange-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${getBedOccupancy('emergency')}%` }}
-                    ></div>
-                  </div>
-                </div>
-
-                {/* General Ward Beds */}
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-blue-900">{t('generalWard')}</span>
-                    <span className="text-xs text-blue-700">{getBedOccupancy('general')}% {t('occupied')}</span>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <button
-                      onClick={() => handleBedCountChange('general', -1)}
-                      className="p-2 bg-blue-200 hover:bg-blue-300 rounded-lg transition-colors"
-                    >
-                      <Minus className="h-4 w-4 text-blue-900" />
-                    </button>
-                    <div className="text-center">
-                      <div className="text-3xl font-bold text-blue-900">{bedCounts.general}</div>
-                      <div className="text-xs text-blue-700">of {currentHospital?.generalBeds || 0}</div>
-                    </div>
-                    <button
-                      onClick={() => handleBedCountChange('general', 1)}
-                      className="p-2 bg-blue-200 hover:bg-blue-300 rounded-lg transition-colors"
-                    >
-                      <Plus className="h-4 w-4 text-blue-900" />
-                    </button>
-                  </div>
-                  <div className="w-full bg-blue-200 rounded-full h-2">
-                    <div
-                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
-                      style={{ width: `${getBedOccupancy('general')}%` }}
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Blood Inventory Search */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Droplet className="h-5 w-5 mr-2 text-red-500" />
-                {t('bloodInventory')}
-              </h3>
-              <div className="flex items-center space-x-4 mb-4">
-                <label className="text-sm font-medium text-gray-700">{t('selectBloodType')}:</label>
-                <select
-                  value={selectedBloodType}
-                  onChange={(e) => setSelectedBloodType(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                >
-                  <option value="A+">A+</option>
-                  <option value="A-">A-</option>
-                  <option value="B+">B+</option>
-                  <option value="B-">B-</option>
-                  <option value="AB+">AB+</option>
-                  <option value="AB-">AB-</option>
-                  <option value="O+">O+</option>
-                  <option value="O-">O-</option>
-                </select>
-              </div>
-              <div className="bg-red-50 p-4 rounded-lg">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm text-gray-600">{t('availableUnits')}</p>
-                    <p className="text-3xl font-bold text-red-900">
-                      {currentHospital ? (getBloodInventoryByHospital(currentHospital.id)[selectedBloodType]?.units || 0) : 0}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {t('lastUpdated')}: {currentHospital ? (getBloodInventoryByHospital(currentHospital.id)[selectedBloodType]?.lastUpdated || 'N/A') : 'N/A'}
-                    </p>
-                  </div>
-                  <Droplet className="h-16 w-16 text-red-500 opacity-20" />
-                </div>
+              <div className="bg-white p-5 rounded-2xl shadow-sm border">
+                <p className="text-xs text-gray-500 font-semibold uppercase">Hospital Beds</p>
+                <p className="text-2xl font-bold text-blue-600 mt-1">{currentHospital?.availableBeds || 0}</p>
               </div>
             </div>
 
             {/* Today's Schedule */}
-            <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:shadow-lg">
-              <h3 className="text-lg font-semibold mb-4 flex items-center">
-                <Clock className="h-5 w-5 mr-2 text-blue-500" />
-                {t('todaySchedule')}
-              </h3>
-              <div className="space-y-4">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-bold text-gray-900 flex items-center">
+                  <Clock className="h-5 w-5 mr-2 text-emerald-600" />
+                  Today's Schedule ({todayAppointments.length})
+                </h3>
+                <button
+                  onClick={() => setActiveTab('appointments')}
+                  className="text-emerald-700 font-bold text-xs hover:underline"
+                >
+                  Manage All Appointments
+                </button>
+              </div>
+
+              <div className="space-y-3">
                 {todayAppointments.length > 0 ? (
-                  todayAppointments.map((appointment) => (
-                    <div key={appointment.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg transition-all duration-300 hover:bg-gray-100">
-                      <div className="flex items-center space-x-4">
-                        <div className="text-sm font-medium">{appointment.time}</div>
+                  todayAppointments.map((appt) => (
+                    <div key={appt.id} className="p-4 bg-gray-50 rounded-xl border flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="font-bold text-sm text-emerald-700 bg-emerald-100 px-2.5 py-1 rounded-lg">
+                          {appt.time}
+                        </div>
                         <div>
-                          <p className="font-medium">{appointment.patientName}</p>
-                          <p className="text-sm text-gray-600">{appointment.type}</p>
+                          <p className="font-bold text-gray-900 text-sm">{appt.patientName}</p>
+                          <p className="text-xs text-gray-500">{appt.type}</p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
-                        {appointment.status === 'completed' && <CheckCircle className="h-5 w-5 text-green-500" />}
-                        {appointment.status === 'confirmed' && <Clock className="h-5 w-5 text-orange-500" />}
-                        {appointment.status === 'pending' && <div className="w-5 h-5 border-2 border-gray-300 rounded-full"></div>}
-                        <span className="text-sm capitalize text-gray-600">{appointment.status}</span>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold ${
+                          appt.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          appt.status === 'completed' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {appt.status}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setSelectedApptForNotes(appt);
+                            setClinicalNotes(appt.notes || '');
+                            setPrescriptionText(appt.prescription || '');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded-lg text-xs font-semibold"
+                        >
+                          Review / Prescribe
+                        </button>
                       </div>
                     </div>
                   ))
                 ) : (
-                  <p className="text-gray-500 text-center py-4">{t('noAppointments')}</p>
+                  <p className="text-gray-500 text-center py-6 text-sm">No appointments scheduled for today.</p>
                 )}
+              </div>
+            </div>
+
+            {/* Bed Management Widget */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <h3 className="text-lg font-bold text-gray-900 mb-4 flex items-center">
+                <Bed className="h-5 w-5 mr-2 text-blue-600" />
+                {currentHospital?.name} - Quick Bed Controls
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-red-50 rounded-xl border border-red-100 text-center">
+                  <span className="text-xs font-bold text-red-900">ICU BEDS</span>
+                  <div className="flex items-center justify-center space-x-3 my-2">
+                    <button onClick={() => handleBedCountChange('icu', -1)} className="p-1 bg-red-200 hover:bg-red-300 rounded"><Minus className="h-4 w-4 text-red-900" /></button>
+                    <span className="text-2xl font-bold text-red-900">{bedCounts.icu}</span>
+                    <button onClick={() => handleBedCountChange('icu', 1)} className="p-1 bg-red-200 hover:bg-red-300 rounded"><Plus className="h-4 w-4 text-red-900" /></button>
+                  </div>
+                  <p className="text-[10px] text-red-700">of {currentHospital?.icuBeds || 0} total beds</p>
+                </div>
+
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-center">
+                  <span className="text-xs font-bold text-amber-900">EMERGENCY BEDS</span>
+                  <div className="flex items-center justify-center space-x-3 my-2">
+                    <button onClick={() => handleBedCountChange('emergency', -1)} className="p-1 bg-amber-200 hover:bg-amber-300 rounded"><Minus className="h-4 w-4 text-amber-900" /></button>
+                    <span className="text-2xl font-bold text-amber-900">{bedCounts.emergency}</span>
+                    <button onClick={() => handleBedCountChange('emergency', 1)} className="p-1 bg-amber-200 hover:bg-amber-300 rounded"><Plus className="h-4 w-4 text-amber-900" /></button>
+                  </div>
+                  <p className="text-[10px] text-amber-700">of {currentHospital?.emergencyBeds || 0} total beds</p>
+                </div>
+
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-center">
+                  <span className="text-xs font-bold text-blue-900">GENERAL WARD</span>
+                  <div className="flex items-center justify-center space-x-3 my-2">
+                    <button onClick={() => handleBedCountChange('general', -1)} className="p-1 bg-blue-200 hover:bg-blue-300 rounded"><Minus className="h-4 w-4 text-blue-900" /></button>
+                    <span className="text-2xl font-bold text-blue-900">{bedCounts.general}</span>
+                    <button onClick={() => handleBedCountChange('general', 1)} className="p-1 bg-blue-200 hover:bg-blue-300 rounded"><Plus className="h-4 w-4 text-blue-900" /></button>
+                  </div>
+                  <p className="text-[10px] text-blue-700">of {currentHospital?.generalBeds || 0} total beds</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'appointments':
+        return (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Consultation Appointments</h2>
+                <p className="text-sm text-gray-600 mt-1">Review scheduled patient visits, update status, and add prescriptions</p>
+              </div>
+            </div>
+
+            {/* Filter Tabs */}
+            <div className="flex space-x-2 overflow-x-auto pb-1">
+              {(['all', 'confirmed', 'pending', 'completed', 'cancelled'] as const).map((filter) => (
+                <button
+                  key={filter}
+                  onClick={() => setAppointmentFilter(filter)}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold capitalize whitespace-nowrap transition-all ${
+                    appointmentFilter === filter
+                      ? 'bg-emerald-600 text-white shadow'
+                      : 'bg-white text-gray-600 hover:bg-gray-100 border'
+                  }`}
+                >
+                  {filter} ({filter === 'all' ? doctorAppointments.length : doctorAppointments.filter(a => a.status === filter).length})
+                </button>
+              ))}
+            </div>
+
+            <div className="space-y-4">
+              {filteredAppointments.length > 0 ? (
+                filteredAppointments.map((appt) => (
+                  <div key={appt.id} className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-lg font-bold text-gray-900">{appt.patientName}</h4>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase ${
+                          appt.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          appt.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          appt.status === 'completed' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {appt.status}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 font-medium">Type: {appt.type}</p>
+                      {appt.isForFamily && (
+                        <p className="text-xs text-purple-700 bg-purple-50 px-2 py-0.5 rounded font-semibold inline-block">
+                          Family Member: {appt.familyMemberName} ({appt.familyMemberRelation || 'Relation'})
+                        </p>
+                      )}
+                      {appt.symptoms && (
+                        <p className="text-xs text-gray-600"><span className="font-semibold">Symptoms:</span> {appt.symptoms}</p>
+                      )}
+                      {appt.prescription && (
+                        <p className="text-xs text-emerald-700 bg-emerald-50 p-2 rounded"><span className="font-semibold">Prescription:</span> {appt.prescription}</p>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col md:items-end justify-between space-y-3 shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
+                      <div>
+                        <p className="text-sm font-bold text-gray-900">{appt.date}</p>
+                        <p className="text-xs text-gray-500 flex items-center md:justify-end">
+                          <Clock className="h-3.5 w-3.5 mr-1" />
+                          {appt.time}
+                        </p>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {appt.status === 'pending' && (
+                          <button
+                            onClick={() => handleAppointmentStatus(appt.id, 'confirmed')}
+                            className="bg-green-600 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          >
+                            Accept
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setSelectedApptForNotes(appt);
+                            setClinicalNotes(appt.notes || '');
+                            setPrescriptionText(appt.prescription || '');
+                          }}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold"
+                        >
+                          Notes & Rx
+                        </button>
+                        {appt.status !== 'cancelled' && (
+                          <button
+                            onClick={() => handleAppointmentStatus(appt.id, 'cancelled')}
+                            className="text-red-600 hover:bg-red-50 border border-red-200 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                          >
+                            Cancel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="bg-white p-12 rounded-2xl shadow-sm border text-center text-gray-500">
+                  <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium">No appointments matching this filter.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'patients':
+        return (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <h2 className="text-2xl font-bold text-gray-900">My Patients ({doctorPatientList.length})</h2>
+              <p className="text-sm text-gray-600 mt-1">Directory of registered patients under your care</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {doctorPatientList.length > 0 ? (
+                doctorPatientList.map((pat) => (
+                  <div key={pat.id} className="bg-white p-5 rounded-2xl shadow-sm border space-y-2">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-emerald-100 text-emerald-700 rounded-xl flex items-center justify-center font-bold">
+                        {pat.name?.[0] || 'P'}
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-gray-900">{pat.name}</h4>
+                        <p className="text-xs text-gray-500 font-mono">{pat.id}</p>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-600 space-y-1 pt-2 border-t">
+                      <p><span className="font-semibold">Email:</span> {pat.email}</p>
+                      <p><span className="font-semibold">Phone:</span> {pat.phone}</p>
+                      <p><span className="font-semibold">Blood Group:</span> {pat.bloodGroup || 'O+'}</p>
+                      {pat.emergencyContact?.name && (
+                        <p><span className="font-semibold">Emergency:</span> {pat.emergencyContact.name} ({pat.emergencyContact.phone})</p>
+                      )}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="col-span-2 bg-white p-12 rounded-2xl shadow-sm border text-center text-gray-500">
+                  <Users className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm">No patient records registered yet.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'hospital':
+        return (
+          <div className="space-y-6 animate-fade-in">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <h2 className="text-2xl font-bold text-gray-900">{currentHospital?.name}</h2>
+              <p className="text-xs text-gray-500 mt-1">{currentHospital?.address}</p>
+              <p className="text-xs text-gray-500">Phone: {currentHospital?.phone} • Dean: {currentHospital?.deanName}</p>
+            </div>
+
+            <div className="bg-white p-6 rounded-2xl shadow-sm border space-y-4">
+              <h3 className="font-bold text-base text-gray-900">Bed Allocation Management</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="p-4 bg-red-50 rounded-xl border border-red-100 text-center">
+                  <p className="text-xs font-bold text-red-900">ICU OCCUPANCY: {getBedOccupancy('icu')}%</p>
+                  <p className="text-3xl font-bold text-red-900 my-2">{bedCounts.icu} / {currentHospital?.icuBeds || 0}</p>
+                  <div className="flex justify-center space-x-2">
+                    <button onClick={() => handleBedCountChange('icu', -1)} className="p-2 bg-red-200 rounded-lg"><Minus className="h-4 w-4" /></button>
+                    <button onClick={() => handleBedCountChange('icu', 1)} className="p-2 bg-red-200 rounded-lg"><Plus className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 text-center">
+                  <p className="text-xs font-bold text-amber-900">EMERGENCY OCCUPANCY: {getBedOccupancy('emergency')}%</p>
+                  <p className="text-3xl font-bold text-amber-900 my-2">{bedCounts.emergency} / {currentHospital?.emergencyBeds || 0}</p>
+                  <div className="flex justify-center space-x-2">
+                    <button onClick={() => handleBedCountChange('emergency', -1)} className="p-2 bg-amber-200 rounded-lg"><Minus className="h-4 w-4" /></button>
+                    <button onClick={() => handleBedCountChange('emergency', 1)} className="p-2 bg-amber-200 rounded-lg"><Plus className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-50 rounded-xl border border-blue-100 text-center">
+                  <p className="text-xs font-bold text-blue-900">GENERAL WARD OCCUPANCY: {getBedOccupancy('general')}%</p>
+                  <p className="text-3xl font-bold text-blue-900 my-2">{bedCounts.general} / {currentHospital?.generalBeds || 0}</p>
+                  <div className="flex justify-center space-x-2">
+                    <button onClick={() => handleBedCountChange('general', -1)} className="p-2 bg-blue-200 rounded-lg"><Minus className="h-4 w-4" /></button>
+                    <button onClick={() => handleBedCountChange('general', 1)} className="p-2 bg-blue-200 rounded-lg"><Plus className="h-4 w-4" /></button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -474,214 +588,124 @@ const DoctorDashboard: React.FC = () => {
       case 'profile':
         return (
           <div className="space-y-6 animate-fade-in">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold">{t('doctorProfile')}</h2>
+            <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Doctor Profile</h2>
+                <p className="text-sm text-gray-600">Manage credentials and consultation fee</p>
+              </div>
               {!editingProfile ? (
                 <button
-                  onClick={() => {
-                    setDoctorProfile(currentDoctor || doctorProfile);
-                    setEditingProfile(true);
-                  }}
-                  className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                  onClick={() => setEditingProfile(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2"
                 >
                   <Edit3 className="h-4 w-4" />
-                  <span>{t('edit')}</span>
+                  <span>Edit Profile</span>
                 </button>
               ) : (
                 <div className="flex space-x-2">
                   <button
                     onClick={handleSaveProfile}
-                    className="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2"
                   >
                     <Save className="h-4 w-4" />
-                    <span>{t('save')}</span>
+                    <span>Save</span>
                   </button>
                   <button
-                    onClick={() => {
-                      setEditingProfile(false);
-                      setDoctorProfile(currentDoctor || doctorProfile);
-                    }}
-                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                    onClick={() => setEditingProfile(false)}
+                    className="bg-gray-500 hover:bg-gray-600 text-white px-4 py-2 rounded-xl text-sm font-semibold flex items-center space-x-2"
                   >
                     <X className="h-4 w-4" />
-                    <span>{t('cancel')}</span>
+                    <span>Cancel</span>
                   </button>
                 </div>
               )}
             </div>
 
-            <div className="bg-white p-6 rounded-xl shadow-sm border transform transition-all duration-300 hover:shadow-lg">
-              <div className="flex items-center space-x-4 mb-6">
-                <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center">
-                  <Stethoscope className="h-10 w-10 text-green-600" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold">{currentDoctor?.name || user?.name}</h3>
-                  <p className="text-gray-600">{currentDoctor?.email || user?.email}</p>
-                  <p className="text-sm text-gray-500">License: {currentDoctor?.licenseNo || 'Not set'}</p>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h4 className="font-semibold mb-3">{t('personalInfo')}</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('name')} *</label>
-                      {editingProfile ? (
-                        <input
-                          type="text"
-                          value={doctorProfile.name}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, name: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                          placeholder="Dr. Full Name"
-                          required
-                        />
-                      ) : (
-                        <p className="text-gray-900 font-medium">{currentDoctor?.name || user?.name}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('email')} *</label>
-                      {editingProfile ? (
-                        <input
-                          type="email"
-                          value={doctorProfile.email}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, email: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                          placeholder="doctor@hospital.com"
-                          required
-                        />
-                      ) : (
-                        <p className="text-gray-900">{currentDoctor?.email || user?.email}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('phone')}</label>
-                      {editingProfile ? (
-                        <input
-                          type="tel"
-                          value={doctorProfile.phone}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, phone: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                          placeholder="Phone number"
-                        />
-                      ) : (
-                        <p className="text-gray-900">{currentDoctor?.phone || user?.phone || t('notSet')}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Medical License Number</label>
-                      {editingProfile ? (
-                        <input
-                          type="text"
-                          value={doctorProfile.licenseNo}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, licenseNo: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                          placeholder="MED-REG-XXXX"
-                        />
-                      ) : (
-                        <p className="text-gray-900">{currentDoctor?.licenseNo || 'Not set'}</p>
-                      )}
-                    </div>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-sm">
+                <div className="space-y-3">
+                  <h4 className="font-bold text-gray-900">Personal Info</h4>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">Doctor Name</label>
+                    {editingProfile ? (
+                      <input
+                        type="text"
+                        value={doctorProfile.name}
+                        onChange={(e) => setDoctorProfile({...doctorProfile, name: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-xl mt-1"
+                      />
+                    ) : (
+                      <p className="font-semibold text-gray-900">Dr. {currentDoctor?.name || user?.name}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">Email</label>
+                    {editingProfile ? (
+                      <input
+                        type="email"
+                        value={doctorProfile.email}
+                        onChange={(e) => setDoctorProfile({...doctorProfile, email: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-xl mt-1"
+                      />
+                    ) : (
+                      <p className="font-semibold text-gray-900">{currentDoctor?.email || user?.email}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">Phone</label>
+                    {editingProfile ? (
+                      <input
+                        type="tel"
+                        value={doctorProfile.phone}
+                        onChange={(e) => setDoctorProfile({...doctorProfile, phone: e.target.value})}
+                        className="w-full px-3 py-2 border rounded-xl mt-1"
+                      />
+                    ) : (
+                      <p className="font-semibold text-gray-900">{currentDoctor?.phone || user?.phone}</p>
+                    )}
                   </div>
                 </div>
-                
-                <div>
-                  <h4 className="font-semibold mb-3">{t('professionalInfo')}</h4>
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('specialization')}</label>
-                      {editingProfile ? (
-                        <select
-                          value={doctorProfile.specialization}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, specialization: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                        >
-                          <option value="">{t('selectSpecialization')}</option>
-                          <option value="General Medicine">{t('generalMedicine')}</option>
-                          <option value="Cardiology">{t('cardiology')}</option>
-                          <option value="Neurology">{t('neurology')}</option>
-                          <option value="Orthopedics">{t('orthopedics')}</option>
-                          <option value="Pediatrics">{t('pediatrics')}</option>
-                          <option value="Surgery">{t('surgery')}</option>
-                          <option value="Dermatology">{t('dermatology')}</option>
-                          <option value="Psychiatry">{t('psychiatry')}</option>
-                        </select>
-                      ) : (
-                        <p className="text-gray-900">{currentDoctor?.specialization || t('notSet')}</p>
-                      )}
-                    </div>
 
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('hospital')}</label>
-                      {editingProfile ? (
-                        <select
-                          value={doctorProfile.hospitalId}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, hospitalId: e.target.value })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                        >
-                          <option value="">Select Hospital</option>
-                          {hospitals.map((h) => (
-                            <option key={h.id} value={h.id}>{h.name}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <p className="text-gray-900">{hospitals.find(h => h.id === currentDoctor?.hospitalId)?.name || hospitals[0]?.name || t('notSet')}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('experience')} ({t('years')})</label>
-                      {editingProfile ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={doctorProfile.experienceYears}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, experienceYears: parseInt(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                        />
-                      ) : (
-                        <p className="text-gray-900">{currentDoctor?.experienceYears || 0} {t('years')}</p>
-                      )}
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">{t('consultationFee')} (₹)</label>
-                      {editingProfile ? (
-                        <input
-                          type="number"
-                          min="0"
-                          value={doctorProfile.consultationFee}
-                          onChange={(e) => setDoctorProfile({ ...doctorProfile, consultationFee: parseInt(e.target.value) || 0 })}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-300"
-                        />
-                      ) : (
-                        <p className="text-gray-900">₹{currentDoctor?.consultationFee || 0}</p>
-                      )}
-                    </div>
+                <div className="space-y-3">
+                  <h4 className="font-bold text-gray-900">Professional Details</h4>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">Specialization</label>
+                    <p className="font-semibold text-gray-900">{currentDoctor?.specialization}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">License Number</label>
+                    <p className="font-semibold text-gray-900">{currentDoctor?.licenseNo}</p>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-500">Consultation Fee (₹)</label>
+                    {editingProfile ? (
+                      <input
+                        type="number"
+                        value={doctorProfile.consultationFee}
+                        onChange={(e) => setDoctorProfile({...doctorProfile, consultationFee: Number(e.target.value) || 0})}
+                        className="w-full px-3 py-2 border rounded-xl mt-1"
+                      />
+                    ) : (
+                      <p className="font-semibold text-emerald-700">₹{currentDoctor?.consultationFee}</p>
+                    )}
                   </div>
                 </div>
               </div>
-              
-              <div className="mt-6 pt-6 border-t flex justify-between">
-                <button 
+
+              <div className="mt-8 pt-6 border-t flex justify-between">
+                <button
                   onClick={logout}
-                  className="bg-red-500 hover:bg-red-600 text-white px-6 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                  className="bg-red-500 hover:bg-red-600 text-white px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center space-x-2"
                 >
                   <LogOut className="h-4 w-4" />
-                  <span>{t('logout')}</span>
+                  <span>Log Out</span>
                 </button>
-                
-                <button 
+                <button
                   onClick={() => setShowDeleteModal(true)}
-                  className="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg flex items-center space-x-2 transition-all duration-300 transform hover:scale-105"
+                  className="bg-red-600 hover:bg-red-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold flex items-center space-x-2"
                 >
                   <Trash2 className="h-4 w-4" />
-                  <span>{t('deleteAccount')}</span>
+                  <span>Delete Account</span>
                 </button>
               </div>
             </div>
@@ -689,43 +713,30 @@ const DoctorDashboard: React.FC = () => {
         );
 
       default:
-        return (
-          <div className="animate-fade-in">
-            <p className="text-gray-500 text-center py-8">Content for {activeTab} tab</p>
-          </div>
-        );
+        return null;
     }
   };
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-4">
-              <div className="bg-green-100 p-2 rounded-lg">
-                <Stethoscope className="h-6 w-6 text-green-600" />
+            <div className="flex items-center space-x-3">
+              <div className="bg-emerald-600 text-white p-2 rounded-xl">
+                <Stethoscope className="h-5 w-5" />
               </div>
-              <h1 className="text-xl font-bold text-gray-900">HWM Doctor Portal</h1>
+              <span className="font-bold text-lg text-gray-900">WIZARDS Doctor Portal</span>
             </div>
+
             <div className="flex items-center space-x-4">
               <LanguageSelector />
-              <div className="flex items-center space-x-2">
-                <div className={`w-3 h-3 rounded-full ${availability ? 'bg-green-500' : 'bg-red-500'}`}></div>
-                <span className="text-sm">{availability ? t('available') : t('unavailable')}</span>
-              </div>
-              <div className="relative">
-                <Bell className="h-6 w-6 text-gray-400 hover:text-gray-600 cursor-pointer transition-colors" />
-                {doctorNotifications.filter(n => !n.isRead).length > 0 && (
-                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center animate-pulse">
-                    {doctorNotifications.filter(n => !n.isRead).length}
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center space-x-2">
-                <User className="h-6 w-6 text-gray-400" />
-                <span className="text-sm font-medium">{user?.name}</span>
+              <div className="flex items-center space-x-2 border-l pl-3">
+                <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold text-xs">
+                  Dr
+                </div>
+                <span className="text-xs font-bold text-gray-800">Dr. {user?.name}</span>
               </div>
             </div>
           </div>
@@ -733,22 +744,22 @@ const DoctorDashboard: React.FC = () => {
       </header>
 
       {/* Navigation */}
-      <nav className="bg-white border-b">
+      <nav className="bg-white border-b sticky top-16 z-30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8 overflow-x-auto">
+          <div className="flex space-x-6 overflow-x-auto">
             {tabs.map((tab) => {
-              const IconComponent = tab.icon;
+              const Icon = tab.icon;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 px-3 py-4 border-b-2 text-sm font-medium transition-all duration-300 whitespace-nowrap transform hover:scale-105 ${
+                  className={`flex items-center space-x-2 py-4 border-b-2 text-sm font-semibold transition-all whitespace-nowrap ${
                     activeTab === tab.id
-                      ? 'border-green-500 text-green-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700'
+                      ? 'border-emerald-600 text-emerald-600'
+                      : 'border-transparent text-gray-500 hover:text-gray-800'
                   }`}
                 >
-                  <IconComponent className="h-4 w-4" />
+                  <Icon className="h-4 w-4" />
                   <span>{tab.label}</span>
                 </button>
               );
@@ -757,32 +768,85 @@ const DoctorDashboard: React.FC = () => {
         </div>
       </nav>
 
-      {/* Main Content */}
+      {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {renderTabContent()}
       </main>
 
-      {/* Delete Account Modal */}
+      {/* Prescription & Clinical Notes Modal */}
+      {selectedApptForNotes && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="flex justify-between items-center border-b pb-3">
+              <h3 className="text-base font-bold text-gray-900">
+                Patient: {selectedApptForNotes.patientName}
+              </h3>
+              <button onClick={() => setSelectedApptForNotes(null)}>
+                <X className="h-5 w-5 text-gray-400" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Clinical Notes & Diagnosis</label>
+              <textarea
+                value={clinicalNotes}
+                onChange={(e) => setClinicalNotes(e.target.value)}
+                rows={3}
+                placeholder="Enter diagnosis, observation..."
+                className="w-full px-3 py-2 border rounded-xl text-xs"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1">Prescription & Medication</label>
+              <textarea
+                value={prescriptionText}
+                onChange={(e) => setPrescriptionText(e.target.value)}
+                rows={3}
+                placeholder="Prescription medicines, dosage..."
+                className="w-full px-3 py-2 border rounded-xl text-xs"
+              />
+            </div>
+
+            <div className="flex space-x-2 pt-2 border-t">
+              <button
+                onClick={handleSaveClinicalNotes}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-bold"
+              >
+                Save & Complete Consultation
+              </button>
+              <button
+                onClick={() => setSelectedApptForNotes(null)}
+                className="bg-gray-200 text-gray-700 px-4 py-2 rounded-xl text-xs font-semibold"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-xl max-w-md w-full mx-4 transform transition-all duration-300 scale-100">
-            <h3 className="text-lg font-semibold mb-4 text-red-600 flex items-center">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white p-6 rounded-2xl shadow-xl max-w-md w-full space-y-4">
+            <h3 className="text-lg font-bold text-red-600 flex items-center">
               <Shield className="h-5 w-5 mr-2" />
               Delete Account
             </h3>
-            <p className="text-gray-600 mb-4">
-              Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently removed.
+            <p className="text-xs text-gray-600">
+              Are you sure you want to delete your doctor profile?
             </p>
-            <div className="flex space-x-2">
+            <div className="flex space-x-2 pt-2">
               <button
                 onClick={handleDeleteAccount}
-                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg transition-colors"
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-xl text-sm font-bold"
               >
-                Delete Account
+                Confirm Delete
               </button>
               <button
                 onClick={() => setShowDeleteModal(false)}
-                className="flex-1 bg-gray-500 hover:bg-gray-600 text-white py-2 rounded-lg transition-colors"
+                className="flex-1 bg-gray-200 text-gray-700 py-2 rounded-xl text-sm font-semibold"
               >
                 Cancel
               </button>

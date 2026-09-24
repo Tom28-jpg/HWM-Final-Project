@@ -232,7 +232,6 @@ const AdminAuth: React.FC = () => {
       email: 'admin@demo.com',
       password: 'Password123!',
     }));
-    setLoginMethod('password');
     setMessage('Demo admin credentials filled!');
   };
 

@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db, googleProvider } from '../lib/firebase';
 
-interface User {
+export interface User {
   id: string;
   name: string;
   email: string;
@@ -26,6 +26,7 @@ interface User {
   licenseId?: string;
   registrationDate: string;
   firebaseUid?: string;
+  isDemo?: boolean;
 }
 
 interface AuthContextType {
@@ -42,6 +43,26 @@ interface AuthContextType {
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const sanitizeForFirestore = <T extends Record<string, any>>(obj: T): T => {
+  if (obj === null || obj === undefined || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) {
+    return obj
+      .filter(item => item !== undefined)
+      .map(item => (typeof item === 'object' && item !== null && !(item instanceof Date) ? sanitizeForFirestore(item) : item)) as unknown as T;
+  }
+  const cleanObj: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== undefined) {
+      if (value && typeof value === 'object' && !(value instanceof Date)) {
+        cleanObj[key] = sanitizeForFirestore(value);
+      } else {
+        cleanObj[key] = value;
+      }
+    }
+  }
+  return cleanObj;
+};
 
 export const useAuth = () => {
   const context = useContext(AuthContext);
@@ -75,42 +96,161 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isFirebaseConnected, setIsFirebaseConnected] = useState(true);
 
   useEffect(() => {
-    // Seed default demo accounts in localStorage if empty
+    // Seed default demo accounts in localStorage if empty or missing
     const existingUsers = JSON.parse(localStorage.getItem('wizards_users') || '[]');
-    if (existingUsers.length === 0) {
-      const demoUsers: (User & { password: string })[] = [
-        {
-          id: 'PATIENT20240001',
-          name: 'Mukesh Kumar',
-          email: 'patient@demo.com',
-          phone: '9876543210',
-          role: 'patient',
-          registrationDate: new Date().toISOString().split('T')[0],
-          password: 'Password123!',
-        },
-        {
-          id: 'DOCTOR20240001',
-          name: 'Dr. Sarah Johnson',
-          email: 'doctor@demo.com',
-          phone: '9876543211',
-          role: 'doctor',
-          hospitalId: '1',
-          licenseId: 'DOC-12345',
-          registrationDate: new Date().toISOString().split('T')[0],
-          password: 'Password123!',
-        },
-        {
-          id: 'ADMIN20240001',
-          name: 'System Admin',
-          email: 'admin@demo.com',
-          phone: '9876543212',
-          role: 'admin',
-          registrationDate: new Date().toISOString().split('T')[0],
-          password: 'Password123!',
-        }
-      ];
-      localStorage.setItem('wizards_users', JSON.stringify(demoUsers));
-    }
+    const demoUsers: (User & { password: string })[] = [
+      {
+        id: 'PATIENT20240001',
+        name: 'Mukesh Kumar',
+        email: 'patient@demo.com',
+        phone: '9876543210',
+        role: 'patient',
+        registrationDate: '2024-01-10',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'ADMIN20240001',
+        name: 'System Admin',
+        email: 'admin@demo.com',
+        phone: '9876543212',
+        role: 'admin',
+        hospitalId: 'HOSPITAL20240001',
+        registrationDate: '2024-01-15',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240001',
+        name: 'Dr. Sarah Johnson',
+        email: 'doctor@demo.com',
+        phone: '+91 98765 43211',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240001',
+        licenseId: 'DOC-TN-12345',
+        registrationDate: '2024-01-15',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240002',
+        name: 'Dr. Priya Sharma',
+        email: 'priya.sharma@fortis.org',
+        phone: '+91 98765 43212',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240002',
+        licenseId: 'DOC-KA-23456',
+        registrationDate: '2024-02-10',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240003',
+        name: 'Dr. Rajesh Varma',
+        email: 'rajesh.varma@miot.org',
+        phone: '+91 98765 43213',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240007',
+        licenseId: 'DOC-TN-34567',
+        registrationDate: '2024-04-05',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240004',
+        name: 'Dr. Ananya Iyer',
+        email: 'ananya.iyer@manipal.org',
+        phone: '+91 98765 43214',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240003',
+        licenseId: 'DOC-KA-45678',
+        registrationDate: '2024-02-15',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240005',
+        name: 'Dr. Karthik Subramanian',
+        email: 'karthik.s@sriramachandra.edu.in',
+        phone: '+91 98765 43215',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240004',
+        licenseId: 'DOC-TN-56789',
+        registrationDate: '2024-03-01',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240006',
+        name: 'Dr. Meenakshi Sundaram',
+        email: 'meenakshi.s@kauvery.org',
+        phone: '+91 98765 43216',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240005',
+        licenseId: 'DOC-TN-67890',
+        registrationDate: '2024-03-12',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240007',
+        name: 'Dr. Vikram Malhotra',
+        email: 'vikram.m@gleneagles.org',
+        phone: '+91 98765 43217',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240006',
+        licenseId: 'DOC-TN-78901',
+        registrationDate: '2024-03-20',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240008',
+        name: 'Dr. Shalini Reddy',
+        email: 'shalini.reddy@aster.org',
+        phone: '+91 98765 43218',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240008',
+        licenseId: 'DOC-KA-89012',
+        registrationDate: '2024-04-18',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240009',
+        name: 'Dr. Arun Natarajan',
+        email: 'arun.n@psghospitals.com',
+        phone: '+91 98765 43219',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240009',
+        licenseId: 'DOC-TN-90123',
+        registrationDate: '2024-05-02',
+        password: 'Password123!',
+        isDemo: true,
+      },
+      {
+        id: 'DOCTOR20240010',
+        name: 'Dr. Deepa Nambiar',
+        email: 'deepa.n@gangahospital.com',
+        phone: '+91 98765 43220',
+        role: 'doctor',
+        hospitalId: 'HOSPITAL20240010',
+        licenseId: 'DOC-TN-01234',
+        registrationDate: '2024-05-15',
+        password: 'Password123!',
+        isDemo: true,
+      }
+    ];
+
+    // Merge demo users with any newly registered users
+    const existingEmails = new Set(existingUsers.map((u: any) => u.email));
+    const mergedUsers = [...existingUsers];
+    demoUsers.forEach(demoU => {
+      if (!existingEmails.has(demoU.email)) {
+        mergedUsers.push(demoU);
+      }
+    });
+    localStorage.setItem('wizards_users', JSON.stringify(mergedUsers));
 
     // Check for existing stored session first
     const storedUser = localStorage.getItem('wizards_current_user');
@@ -179,10 +319,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         newUser.firebaseUid = firebaseUid;
         
         // Save user document in Firestore
-        await setDoc(doc(db, 'users', firebaseUid), {
+        await setDoc(doc(db, 'users', firebaseUid), sanitizeForFirestore({
           ...newUser,
           createdAt: now.toISOString()
-        });
+        }));
       } catch (fbErr: any) {
         console.warn('Firebase user creation note (falls back safely):', fbErr?.message);
       }
@@ -261,7 +401,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Verify role or update
         if (profile.role !== role) {
           profile.role = role;
-          await setDoc(userDocRef, profile, { merge: true });
+          await setDoc(userDocRef, sanitizeForFirestore(profile), { merge: true });
         }
       } else {
         // Create new user profile in Firestore
@@ -276,10 +416,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           registrationDate: now.toISOString().split('T')[0],
           firebaseUid: fbUser.uid,
         };
-        await setDoc(userDocRef, {
+        await setDoc(userDocRef, sanitizeForFirestore({
           ...profile,
           createdAt: now.toISOString()
-        });
+        }));
       }
 
       setUser(profile);
@@ -339,7 +479,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     for (const docId of idsToSync) {
       try {
-        await setDoc(doc(db, 'users', docId), updatedUser, { merge: true });
+        await setDoc(doc(db, 'users', docId), sanitizeForFirestore(updatedUser), { merge: true });
       } catch (err) {
         console.warn(`Failed to sync user update to Firestore users/${docId}:`, err);
       }

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/authcontext';
-import { useData, isDemoOrTestEntity } from '../../contexts/datacontext';
+import { useData } from '../../contexts/datacontext';
 import { 
   Stethoscope, 
   ArrowLeft, 
@@ -243,7 +243,6 @@ const DoctorAuth: React.FC = () => {
       email: 'doctor@demo.com',
       password: 'Password123!',
     }));
-    setLoginMethod('password');
     setMessage('Demo doctor credentials filled!');
   };
 
@@ -259,12 +258,9 @@ const DoctorAuth: React.FC = () => {
     }
   };
 
-  // Only show hospitals that are verified and registered by hospital admins in the database
+  // Show all verified hospitals available in the system
   const registeredHospitals = hospitals.filter(
-    (hospital) => {
-      if (!hospital || !hospital.id || !hospital.name || hospital.name.trim().length === 0) return false;
-      return !isDemoOrTestEntity(hospital);
-    }
+    (hospital) => hospital && hospital.id && hospital.name && hospital.name.trim().length > 0
   );
 
   const filteredHospitals = registeredHospitals.filter((hospital) => {

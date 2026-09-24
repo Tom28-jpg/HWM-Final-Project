@@ -812,6 +812,53 @@ const AdminDashboard: React.FC = () => {
           </div>
         );
 
+      case 'appointments':
+        return (
+          <div className="space-y-6 animate-fade-in">
+            <div className="flex justify-between items-center bg-white p-6 rounded-2xl shadow-sm border">
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">Hospital Appointments ({hospitalAppointments.length})</h2>
+                <p className="text-sm text-gray-600 mt-1">Monitor scheduled consultations across all hospital departments</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {hospitalAppointments.length > 0 ? (
+                hospitalAppointments.map((appt) => (
+                  <div key={appt.id} className="bg-white p-6 rounded-2xl shadow-sm border flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1">
+                      <div className="flex items-center space-x-2">
+                        <h4 className="text-lg font-bold text-gray-900">{appt.patientName}</h4>
+                        <span className={`text-xs px-2.5 py-0.5 rounded-full font-semibold uppercase ${
+                          appt.status === 'confirmed' ? 'bg-green-100 text-green-800' :
+                          appt.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          appt.status === 'completed' ? 'bg-blue-100 text-blue-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {appt.status}
+                        </span>
+                      </div>
+                      <p className="text-sm font-semibold text-purple-700">Doctor: Dr. {appt.doctorName}</p>
+                      <p className="text-xs text-gray-500">Type: {appt.type}</p>
+                      {appt.symptoms && (
+                        <p className="text-xs text-gray-600"><span className="font-semibold">Reason:</span> {appt.symptoms}</p>
+                      )}
+                    </div>
+                    <div className="text-left md:text-right border-t md:border-t-0 pt-3 md:pt-0">
+                      <p className="text-sm font-bold text-gray-900">{appt.date}</p>
+                      <p className="text-xs text-gray-500">{appt.time}</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="bg-white p-12 rounded-2xl shadow-sm border text-center text-gray-500">
+                  <Calendar className="h-10 w-10 text-gray-300 mx-auto mb-2" />
+                  <p className="text-sm font-medium">No appointments registered for this hospital yet.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
       case 'profile':
         return (
           <div className="space-y-6 animate-fade-in">
